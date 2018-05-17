@@ -1,0 +1,139 @@
+在lua的string库和正则表达式
+
+1. string库中所有的字符索引从前往后是1,2,...;从后往前是-1,-2,...
+
+2. string库中所有的function都不会直接操作字符串，而是返回一个结果
+
+string.len(s):返回字符串的长度.
+
+string.lower(s):变小写.
+
+string.upper(s):变大写.
+
+string.rep(s,n):将s拷贝n份,并连接起来,返回.
+
+string.sub(s,i [,j]):取s中从i开始到j为止的自字符串.默认j为长度.-i表示倒数.
+
+1.string.find(s, pattern, pos) 
+
+　　第1个参数：源字符串
+　　第2个参数：待搜索之模式串
+　　第3个参数：A hint, 从pos位置开始搜索
+　　找到匹配返回：匹配串开始和结束的位置，否则返回nil
+
+2.string.gsub(s, pattern, reps)  string.gsub(s, pattern, func)
+
+　　第1个参数：源字符串
+
+　　第2个参数：待替换之模式串
+
+　　第3个参数：替换为reps
+
+　　返回 结果串+匹配数
+
+　　gsub也可以用拷贝捕获技巧
+
+　　print(string.gsub("hello, world", "(o)", "%1-%1")) <== hello-o, wo-orld    2
+
+　　print(string.gsub("hello Lua", "(.)(.)", "%2%1")) <== ehll ouLa           4
+
+　　function trim (s) return (string.gsub(s, "^%s*(.-)%s*$", "%1")) end <== 注意匹配数用括号丢弃
+
+　　string.gsub(s, pattern, func)
+
+　　第3个参数：自定义函数，对找到的匹配操作，并传出替换值
+
+　　s, n = string.gsub("hello world", "l+", function(s) return "xxx" end)----> l+一个或多个l ,所以替换了 ll  和  l  返回为2
+
+　　print(s, n) <== hexxxo worxxxd 2
+
+3.string.gfind
+
+返回一个迭代器，迭代器每执行一次，返回下一个匹配串；
+
+iter = string.gfind("a=b c=d", "[^%s+]=[^%s+]")
+
+print(iter()) <== a=b
+
+print(iter()) <== c=d
+
+通常用于泛性for循环,下面的例子结果同上
+
+for s in string.gfind("a=b c=d", "[^%s+]=[^%s+]") do
+
+print(s)
+
+end
+
+4.下面的表列出了Lua支持的所有字符类
+
+ .        任意字符
+%a        字母
+%c        控制字符
+%d        数字
+%l        小写字母
+%p        标点字符
+%s        空白符
+%u        大写字母
+%w        字母和数字
+%x        十六进制数字
+%z        代表0的字符
+上面字符类的大写形式表示小写所代表的集合的补集。例如, '%A'非字母的字符: 
+
+模式串中的特殊字符
+
+( ) . % + - * ? [ ^ $
+
+'%' 用作特殊字符的转义字符
+
+'%.' 匹配点；
+
+'%%' 匹配字符 '%'。
+
+转义字符 '%'不仅可以用来转义特殊字符，还可以用于所有的非字母的字符。当对一个字符有疑问的时候，为安全起见请使用转义字符转义他。
+
+用'[]'创建字符集
+
+'[%w_]' 匹配字母数字和下划线
+
+'[01]' 匹配二进制数字
+
+'[%[%]]'匹配一对方括号
+
+在'[]'中使用连字符'-'
+
+'%d'    表示 '[0-9]'；
+
+'%x'    表示 '[0-9a-fA-F]'
+
+'[0-7]' 表示 '[01234567]'
+
+在'[]'开始处使用 '^' 表示其补集：
+
+'[^0-7]' 匹配任何不是八进制数字的字符；
+
+'[^\n]' 匹配任何非换行符户的字符。
+
+'[^%s]' == '%S'
+
+模式修饰符
+
+　　+ 匹配前一字符1次或多次
+
+　　* 匹配前一字符0次或多次;最长匹配
+
+　　- 匹配前一字符0次或多次;最短匹配
+
+　　? 匹配前一字符0次或1次
+
+　　^ 匹配字符串开头
+
+　　$ 匹配字符串结尾
+
+参考资料：
+
+https://msdn.microsoft.com/zh-cn/library/ae5bf541(VS.80).aspx
+
+http://blog.csdn.net/liuyukuan/article/details/5489623
+
+http://www.cnblogs.com/light169/archive/2006/10/18/532347.html
