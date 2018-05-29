@@ -1,0 +1,6115 @@
+
+  
+//////////////////////////// linux高级环境编程 ///////////////////////////
+一、文件和目录
+   -rw-r--r--      1     root root     0  10-25 16:03 aaa.txt
+   文件类型和权限 节点数 用户  组    大小    创建时间  文件名
+(一)基本概念   
+1.文件类型
+   - 普通文件 存各种数据  
+   d 目录文件 存结构体，结构体内部标识这个目录中文件名称等信息
+   l 链接文件 面试重点  软链接才是文件，而硬链接仅仅是一节点
+   c 字符设备 除块设备都是字符设备，没有扇区的概念
+   b 块设备   所有存储类的驱动，都称为块设备 ，包含扇区处理
+   p 管道设备 是用内核内存模拟的通道 
+   
+
+2. 权限
+   r 读 4   w 写 2  x 执行 1   - 无  0
+   rwx 顺序不可改 可读可写可执行
+   -wx 不能读 可写可执行
+   
+   分组
+   u 组 创建者
+   g 组 创建者所在组的成员
+   o 组 其它人所具备的权限
+   
+   657 创建者可读可写  组员可读可执行 其它人可读可写可执行
+   是八进制数
+   
+   chmod 776 test.txt  将这个文件的权限修改
+3.设备节点
+   目录的设备节点 里面子目录的个数
+   文件的设备节点 是硬链接(别名)个数    
+   
+   目录没有硬链接
+   文件可以有硬链接，没有创建新文件
+      ln test.c  aaa.c  //aaa.c是test.c的别名
+      
+   目录和文件都可以有软链接，是创建了一个新文件，指向了原文件
+      ln -s test.c bbb.c  //bbb.c是文件，保存了指定test.c的指针     
+   
+   三者的区别:         
+    符号链接、硬链接、windows快捷方式都具有指向功能；它们的区别是什么？
+    windows快捷方式指向文件的位置
+    符号链接是一种文件，创建链接时，系统会为符号链接重新分配一个inode（节点）编号，该符号链接是向文件指针。
+    但硬链接根本不是一种文件，只是一种指向。创建硬链接只是增加一个引用计数，硬链接和它的源文件共享一个inode。
+   
+4.设备文件
+   ls -l
+   crw------- 1 root root    14,   12 2016-01-22 adsp
+   14 是主设备号  决定了是哪个驱动程序
+   12 是次设备号  决定了在一个驱动程序中的哪一个具体的设备
+      
+5.目录文件
+   工作目录 进入系统后所在的"/"就是当前目录
+   当前目录
+   程序目录 保存可执行文件的目录 在工作目录中可以调程序目录中的可执行文件
+   
+   
+   当前在/home  想找/usr/include/math.h
+   相对目录 从当前目录寻找文件，这种路径称相对目录      
+      vim ../usr/include/math.h
+   绝对目录 从"/"开始寻找文件，这种路径称绝对目录
+      vim /usr/include/math.h
+      
+   执行文件 test在root内
+      ./test  当前在root内 当前目录中的test文件
+      ../root/test 当前在home中
+      /root/test
+      什么时候执行程序可省略目录？
+      将test加入到 /bin  或者将/root加入到环境变量中
+      
+//------------------------------------------------------      
+(二)目录操作
+   
+   系统调用：就是内核提供的一系列的函数。也称为系统API
+ 
+   
+ 
+ 
+1).创建目录
+    int mkdir(const char *path,mode_t mode);
+    参数：path  目录名
+          mode: 模式，即访问权限，包含如下选项
+                S_IRUSR  	属主读权限   0400  0b100000000
+                S_IWUSR   属主写权限   0200  0b010000000
+                S_IXUSR   属主执行权限 0100
+                S_IRGRP   属组读权限   0040  0b000100000
+                ……
+                可以使用 S_IRUSR | S_IWUSR组合权限。 
+                或
+                可以直接用数字，是八进制数 0777 、0666等
+    返回: -1失败 0成功           
+ 
+#include <stdio.h>
+#include <errno.h> //系统错误
+int main(int argc,char **argv){
+    int err=mkdir(argv[1],0666); //0666
+    if (err==-1){
+        printf("----- mkdir err no=%d,str=%s\n",errno,strerror(errno));
+       //errno错误编号 是系统全局，运行函数时，系统将运行的错误号写入到errno中
+       //strerror()将错误号对应的说明取出
+    }
+    return 0;
+}
+   
+   生成目录的权限，是系统限制的权限和你给定权限的叠加
+
+   文件创建权限：
+   PERM_MAX_FILE & (mode)
+   目录创建权限：
+   PERM_MAX_DIR & (mode)
+           
+   其中这个mode就创建文上或目录时输入的参数。而最大权限的计算方法如下：
+     PERM_MAX_FILE= 0666 & ~(umask) //umask是权限掩码，为系统内建umask的设定值
+     PERM_MAX_DIR = 0777 & ~(umask)            
+   
+   例：****
+     umask 0022 系统的内定权限掩码
+     问创建文件,你给定的权限是0777 则实际文件权限是多少？
+     0666 & ~0022 & 0777
+     110110110
+     111101101
+     111111111
+     ----------
+     110100100  0644    
+     
+   
+   mkdir  strerror 权限计算
+     
+2).删除目录
+    int rmdir(const char *path);
+    说明：只能删除空目录    
+
+
+3).获取当前目录及执行目录
+    #include <unistd.h>
+    //获取当前目录，是执行程序时所在的目录
+    char *getcwd(char *buf,size_t size);
+     参数：buf  保存当前目录的内存地址
+           size 为内存的大小
+     返回值 成功，返回获取的目录,失败为 NULL
+     
+    例：获取当前目录
+    int main(int argc,char **argv){
+        char dir[256];
+        getcwd(dir,256);
+        printf("---- %s\n",dir);
+        return 0; 
+    }   
+
+    //获取程序运行路径，即应用程序存放的位置
+    int  readlink(const  char *path,  char *buf, size_t  bufsiz);
+    参数：path符号链接，在linux内执行程序都用"/proc/self/exe"符号连接
+               buf 用来写入正在执行的文件名（包含绝对路径）的内存
+               bufsiz 即指明buf的大小。
+     返回值：实际文件名的长度，-1 失败    
+
+    例：打开程序所在目录的文件
+    int main(int argc,char **argv){
+     	  //获取程序目录，执行时在其它目录执行
+         char dir[256]={0};
+         int err=readlink("/proc/self/exe",dir,256);
+         if (err==-1) return -1;
+         //char *p,*p1=dir;
+         //while((p=strstr(p1+1,"/"))!=NULL) p1=p;
+         //*p1=0;
+         int i;
+         for(i=strlen(dir)-1;i>=0 && dir[i]!='/';i--);
+         dir[i]=0; 
+         //打开程序所在目录中的文件
+         char filename[256];
+         sprintf(filename,"%s/%s",dir,argv[1]);
+         printf("---- %s\n",filename);
+         FILE *fp=fopen(filename,"r");
+         if (fp==NUL=){
+            printf("---- %s\n",strerror(errno));
+         }
+         return 0;
+     }
+
+
+4). 获取目录或文件的状态  ****
+    #include <sys/types.h>
+    #include <sys/stat.h>
+    //读取指定文件或目录的状态信息   
+    int stat(const char *path, struct stat *buf);
+    //读取已打开的文件状态信息
+    int fstat(int filedes, struct stat *buf);
+    参数：path 路径或文件名
+              filedes: 已打开文件或目录的句柄 
+              buf:  是struct stat结构的指针，其结构格式如下：
+
+          struct stat{
+              	unsigned short st_mode; 	//文件保护模式 （即文件类型）
+              	unsigned short st_nlink;	//硬链接引用数
+              	unsigned short st_uid;  	//文件的用户标识
+              	unsigned short st_gid;  	//文件的组标识
+              	unsigned long  st_size; 	//文件大小
+              	unsigned long  st_atime;  	//文件最后的访问时间
+              	unsigned long  st_atime_nsec; 	//文件最后的访问时间的秒数的小数
+              	unsigned long  st_mtime;   	//文件最后的修改时间
+              	unsigned long  st_mtime_nsec; 
+              	unsigned long  st_ctime;   	//文件最后状态的改变时间
+              	unsigned long  st_ctime_nsec; 
+              	....
+          };	
+
+    判断文件类型及记问权限
+    方法一
+    在struct stat结构中，由st_mode字段记录了文件类型及访问权限，操作系统提供了一系列的宏来判断文件类型。如下：
+        S_ISREG(mode)  //判断是否为普通文件
+        S_ISDIR(mode)  //判断是否为目录文件
+        S_ISCHR(mode)  //判断是否为字符设备文件
+        S_ISBLK(mode)  //判断是否为块设备文件
+        S_ISFIFO(mode)  //判断是否为管道设备文件
+        S_ISLNK(mode)  //判断是否为符号链接
+        
+
+int main(int argc,char **argv){
+    struct stat st;
+    int err= stat(argv[1],&st); 
+    if (err==-1) return -1;
+    if (S_ISDIR(st.st_mode)) printf("isdir\n"); 
+    else if (S_ISREG(st.st_mode)) printf("file\n");
+}
+
+
+
+    方法二
+        另外也可以直接读取st_mode内的数据，不过st_mode内的数据是组合而成的数据，包括了很多信息，需要进行“与”运算才能取出这个字段中的数据。st_mode是用特征位来表示文件类型的，特征位的定义如下：
+        02.S_IFSOCK     0140000     socket  
+        03.S_IFLNK      0120000     符号链接(symbolic link)  
+        04.S_IFREG      0100000     一般文件  
+        05.S_IFBLK      0060000     区块装置(block device)  
+        06.S_IFDIR     	0040000     目录  
+        07.S_IFCHR      0020000     字符装置(character device)  
+        08.S_IFIFO     	0010000     先进先出(fifo)  
+        09.S_ISUID     	0004000     文件的(set user-id on execution)位  
+        10.S_ISGID     	0002000     文件的(set group-id on execution)位  
+        13.S_IRUSR      00400       文件所有者具可读取权限  
+        14.S_IWUSR      00200       文件所有者具可写入权限        
+        15.S_IXUSR     	00100       文件所有者具可执行权限  
+        16.S_IRWXG     	00070       用户组的遮罩值(即所有权限值)  
+        17.S_IRGRP     	00040       用户组具可读取权限  
+        18.S_IWGRP     	00020       用户组具可写入权限  
+        19.S_IXGRP     	00010       用户组具可执行权限  
+        20.S_IRWXO     	00007       其他用户的遮罩值(即所有权限值)  
+        21.S_IROTH     	00004       其他用户具可读取权限  
+        22.S_IWOTH     	00002       其他用户具可写入权限  
+        23.S_IXOTH     	00001       其他用户具可执行权限 
+
+ int main(int argc,char **argv){
+    struct stat st;
+    int err= stat(argv[1],&st); 
+    if (err==-1) return -1;
+    if (st.st_mode & S_IFREG) printf("file\n");
+    else if (st.st_mode & S_IFDIR) printf("isdir\n");
+}
+       
+
+
+5).目录的读写操作(标准C内的函数)
+   其结构如下：
+   #include <sys/types.h>   //对外提供的各种数据类型 如 size_t
+   #include <sys/stat.h>    //对外提供的各种结构类型 如 time_t 
+
+    typedef int ino_t; 
+    struct dirent{
+        	 ino_t  d_ino;    //目录文件的节点编号
+        	 off_t  d_off;    //目录文件开始到目录进入点的位移
+        	 unsigned short d_reclen;    //d_name的长度(字符串长)
+        	 unsigned char  d_type;      //d_name的类型
+        	 char   d_name[256]; //文件或目录名
+    };
+
+    #include <stdio.h>
+    //打开目录
+    DIR *opendir(const char *path); 
+     参数：path 目录名 
+     返回值：是DIR类型指针,（文件为FILE *）
+    
+    //关闭已打开的目录
+    int closedir(DIR *dp);
+    
+    //读取目录
+    struct dirent *readdir(DIR *dp);
+     参数：dp: 目录句柄，是opendir返回值
+     返回值：目录结构地址，该结构内存储指定目录下的文件信息，每读取一次则读取一个结点。目录文件本身是只读，不可以写，如果创建目录，则用mkdir函数，删除目录用rmdir函数
+    
+    练习：
+       打开并显示指定目录中每一层的所有文件和子目录
+       
+    void getdir(char *path,int n){
+        struct stat st; 
+        char pathname[256];
+        int i;
+        DIR* fp=opendir(path);
+        if (fp==NULL) return ;
+        struct dirent *db;
+        while((db=readdir(fp))!=NULL){
+           if (db->d_name[0]!='.') { //打印文件名或字符串
+               for(i=0;i<n;i++) printf("    "); //缩进
+               printf("%s\n",db->d_name);  //文件名或目录名
+           }           
+           sprintf(pathname,"%s/%s",path,db->d_name);
+           stat(pathname,&st); //获取文件属性
+           if (S_ISDIR(st.st_mode) && db->d_name[0]!='.')
+              getdir(pathname,n+1); //递归调用
+        }
+        closedir(fp);
+    }
+    
+    
+    int main(int argc,char **argv){
+    
+        getdir(argv[1],0);
+        return 0;
+    }
+
+
+   总结：
+     mkdir rmdir
+     getcwd readlink
+     stat
+     opendir closedir readdir
+     硬链接和软链接、快捷
+     计算权限
+   
+    
+   作业：1.所有例子必须熟练
+         2.实现ls指令   ls -al /home/aa* 
+void print(int isls,char *name,char *dir){
+  if (!isls){
+     printf("%-15s\t",name);
+  }
+  else{
+     struct stat st;
+     char filename[256];
+     sprintf(filename,"%s/%s",dir,name);
+     stat(filename,&st);
+     char type=' ';
+     if (st.st_mode &S_IFDIR) type='d';
+     else if (st.st_mode &S_IFREG) type='-';
+     else if (st.st_mode &S_IFLNK) type='l';
+     else if (st.st_mode &S_IFCHR) type='c';
+     else if (st.st_mode &S_IFBLK) type='b';
+     else if (st.st_mode &S_IFIFO) type='p';
+     else if (st.st_mode &S_IFSOCK) type='s';
+     char mod[10]="---------";
+     if (st.st_mode &S_IRUSR) mod[0]='r';
+     if (st.st_mode &S_IWUSR) mod[1]='w';
+     if (st.st_mode &S_IXUSR) mod[2]='x';
+     if (st.st_mode &S_IRGRP) mod[3]='r';
+     if (st.st_mode &S_IWGRP) mod[4]='w';
+     if (st.st_mode &S_IXGRP) mod[5]='x';
+     if (st.st_mode &S_IROTH) mod[6]='r';
+     if (st.st_mode &S_IWOTH) mod[7]='w';
+     if (st.st_mode &S_IXOTH) mod[8]='x';
+     int n=st.st_nlink;
+     printf("%c%s %d %s\n",type,mod,n,name);
+  }
+}
+
+int main(int argc,char **argv){
+   int i,isls=0,isview=0;
+   //     0        0       0 1目录  2文件
+   char *dir="./",*file;
+   for(i=1;argv[i]!=NULL;i++){
+     if (argv[i][0]=='-'){
+        if (argv[i][1]=='\0') continue;
+        if (strchr(argv[i],'a')) isview=1;
+        if (strchr(argv[i],'l')) isls=1;
+     }
+     else {
+        char *p1=argv[1],*p=NULL;
+        while((p=strstr(p1+1,"/"))!=NULL) p1=p;
+        *p1=0;
+        dir=argv[i];
+     }
+   }
+   //--------------------------------------
+   DIR *fp=opendir(dir);
+   if (fp==NULL) return -1;
+   struct dirent* db;
+   while((db=readdir(fp))!=NULL){
+      if (isview==0 && db->d_name[0]=='.') continue;
+      print(isls,db->d_name,dir);
+   }
+   printf("\n");
+   closedir(fp);
+}
+
+       
+         
+         3.实现find指令 find ./ -name "aaa.*"
+       
+//////////////////////////////////////////////////////////////
+(三)文件操作
+1.流 数据的流动 即从内存到外设或从外设到内存
+  标准流、文件流
+  标准流: 标准C中提供的文件操作，是对文流的又一次封装
+  文件流: 是系统调用来实现的文件操作，也称为原始文件
+  
+ (1) 标准I/O：提供了3种不同方式的缓冲 ***
+     a.全缓冲。即缓冲区被写满或是调用fflush后，数据才会被写入磁盘。
+     b.行缓冲。即缓冲区被写满或是遇到换行符时，才会进行实际的io操作。当流涉及一个终端时（标准输入和标准输出），通常使用行缓冲。
+        printf
+     c.不缓冲。标准io库不对字符进行缓存处理。
+       标准出错流stderr往往是不带缓存的，使得出错信息可以尽快显示出来。   
+   
+ (2)原始I/O
+     又称文件IO，是linux操作系统提供的API，称为系统调用
+     
+  原始IO和标准IO的区别?****
+  原始IO:操作系统提供的API、利用文件描述符做为标识(整型，即文件编号)，无缓冲,可操作所有设备
+  标准IO:标准C提供的API、利用FIlE指针做为标识，有三种缓冲机制，只能操作磁盘文件
+     
+     OPENMAX 记录了系统文件描述符的最大值.
+     
+     
+ (3).标准输入，标准输出，标准错误
+   程序加载后，默认被打开了这三个设备 
+   系统默认打开的三个文件描述符(为进程预定义的三个流)如下： *** 
+         STDOUT_FILENO  0 标准输出 用于向屏幕输出数据
+         STDIN_FILENO   1 标准输入 用于键盘获取数据
+         STDERR_FILENO  2 标准错误 用于获取错误信息
+         
+   原始io的常用函数 open read write close
+   上述的三个描述不再需要用open打开，是系统默认打开的
+   
+   描述符，是被打开的文件的编号，当文件被关闭后，这个描述符可以重新被利用.
+   在不同的进程中，描述符可能相同，所以说描述符是在一个进程中对文件进行管理的编号。
+   
+   
+   ssize_t read(int fd, void *buf, size_t count);
+   ssize_t write(int fd, const void *buf, size_t count);
+   参数 fd 描述符
+        buf 内存地址
+        count 要读取或写入的字节数
+   返回值：实际读取或写入的字节数 -1失败
+    
+   例：     
+       int main(int argc,char **argv){
+           char buf[256];
+           int size=read(1,buf,256);
+           printf("---- size=%d\n",size);
+           write(0,buf,strlen(buf));
+       }
+
+ (4).常用设备:
+     /dev/null  空设备，用来丢弃数据
+     /dev/port  存取i/o的端口设备
+     /dev/ttyN  N(0...) 字符终端设备
+     /dev/sdaN  N(1...) SCSI磁盘设备
+     /dev/scdN  N(1...) SCSI光驱设备
+     /dev/fbN   N(0...) 帧缓冲设备(frame buffer),用于屏幕输出 重点，多媒体操作必须用这个设备
+     /dev/mixer 混音器设备,用于调整音量的大小、各种音频的叠加 重点, 多媒体操作经常使用
+     /dev/dsp   声卡数字采样和数字录音设备 用于播放声音和录音 重点, 多媒体操作必须使用
+     /dev/audio 声卡音频设备,用于播放声音和录音，支持sun音频，较少使用
+     /dev/video 视频设备，用于摄像头的视频采样(录像、照像) camera
+  
+  (5).常用的头文件
+     #include <sys/types.h> //是操作系统对外供的各种数据类型的定义  size_t
+     #include <sys/stat.h>  //是操作系统对外提供的各种结构类型的定义 time_t
+     #include <sys/ioctl.h> //设备的控制函数定义
+     #include <sys/soundcard.h> //声卡的结构及定义
+     #include <errno.h>     //对外提供的各种错误号的定义 用数字代码的错误类型
+     #include <fcntl.h>     //文件控制的函数定义
+     #include <termios.h>   //串口的结构和定义
+     #include <unistd.h>    //c++标准库头文件
+       
+             
+
+2.文件及设备的操作函数
+  1) 检测文件
+  int access(const char *pathname, int mode);
+     参数：pathname:包含路径的文件名
+           mode: 模式 有5种模式
+                 0  检查文件是否存在
+                 1  检查文件是否可执行  x 1
+                 2  检查文件是否可写    w 2
+                 4  检查文件是否可读    r 4
+                 6  检查评议件是否可读写 w+r 6
+
+     返回值：0 真，非零 假，无论是否为真，这个函数都会向标准错误发送信号，指明执行情况。
+     lseek  返回光标位置，所以可以用来读文件大小
+     stat   可以判断文件的可读、可写、可执行，各种属性 包括文件大小
+     access 可以判断文件的可读、可写、可执行，判断文件是否存在
+     
+   2).创建文件 
+     int creat(const char *pathname, mode_t mode); 
+     参数：pathname 包含路径的文件名
+           mode模式，即访问权限，包含如下选项
+                S_IRUSR  	属主读权限
+                S_IWUSR   属主写权限
+                S_IXUSR   属主执行权限
+                ……. 
+           同mkdir函数
+     返回值：成功，返回文件描述符,失败 -1     
+     
+   3).打开文件
+     int open(const char *pathname, int flags);
+     int open(const char *pathname, int flags, mode_t mode);
+     参数：pathname 包含路径的文件名
+           flags 文件打开方式
+               O_RDONLY 	只读方式打开文件  光标在头
+               O_WRONLY 	只写方式打开文件  光标在头
+               O_RDWR   	读写方式打开文件  光标在头
+               O_APPEND 	追加模式打开文件，在写以前, 光标被置在文件末尾
+               O_CREAT  	创建文件，若文件不存在 将 创建 一个 新 文件
+               O_EXCL   	如果通过O_CREAT打开文件，若文件已存在，则open调用失
+                                        败，用于防止重复创建文件。
+               O_TRUNC  	如果文件已存在，以写方式打开，则将文件清空。如果使用
+                          O_CREAT和O_TRUNC 时，对设备操作报错,防止对设备进行创建
+               O_SYNC   	实现I/O 的同步. 任何通过文件描述符对文件的 write 都会使调
+                          用的进程中断,直到数据被真正写入硬件中
+               O_NONBLOCK   非阻塞模式（非块方式）打开，当打开文件不满足于条件时，
+                            则一直等待,函数不能马上返回，直到满足于条件才打开结束。
+      返回值：文件描述符 失败-1
+      
+      creat 创建文件
+      open  也可创建文件,用 O_WRONLY | O_CREAT 相当于creat
+      
+      mode 创建之后的文件权限  flags 是当前打开的方式
+      O_EXCL  用来防止重复创建，避免了覆盖原来的文件
+      O_TRUNC 在重写文件时先清空，防止后面有垃圾数据
+      O_NONBLOCK 防止read一直被阻塞，如果在打开文件时没有指定非阻塞模式，则read在没有数据可读时，都可等待数据，read函数不结束，代码不向下运行
+      通常写编写代码时，都用阻塞模式。
+      
+ 
+    
+   4).关闭文件
+     void close(int filedes);
+     参数：filedes文件描述符      
+                         
+     例：当文件存在时，读取数据，否则创建文件并写入数据
+         int main(int argc,char **argv){
+             int fd, err=access(argv[1],0);//?
+             if (!err){
+                fd=open(argv[1],O_RDONLY);
+                char buf[4096];
+                int size=read(fd,buf,200);
+                printf("--fd=%d,size=%d,buf=%s\n",fd,size,buf);
+                close(fd);
+             }
+             else {
+                fd=creat(argv[1],0777);//?
+                char buf[256];
+                scanf("%s",buf);
+                int size=write(fd,buf,strlen(buf));
+                close(fd);
+             ｝
+         ｝    
+  
+
+ 5).文件删除
+     int unlink(const char *pathname);
+     参数：pathname硬链接的各种名
+     本质是解决硬链接，也就是删除节点数
+     说明：只是将文件的引用计数减1 ,如果引用计数是0时，则删除物理文件
+
+     
+     练习：实现rm -rf 名
+     思想：删除函数，在这里面要判断是否是目录
+           如果是目录 ｛
+              排除 .和..    
+              递归调函数，然后删目录
+           ｝
+           否则删文件
+     
+int i,isr=0,isf=0,isv=0;
+
+void startdel(char *name,int isv){
+     struct stat st;
+     stat(name,&st);
+     if (S_ISDIR(st.st_mode)) { //如果是目录，则递归调用
+        DIR *fp=opendir(name);
+        if (fp!=NULL){
+           struct dirent* p;
+           char filename[256];
+           while((p=readdir(fp))!=NULL){
+               if (strcmp(p->d_name,".")==0 || strcmp(p->d_name,"..")==0) continue;
+               sprintf(filename,"%s/%s",name,p->d_name);
+               startdel(filename,isv);
+           }
+        }
+        closedir(fp);
+        rmdir(name); //删目录
+     }
+     else
+        unlink(name); //删文件
+     if (isv) printf("del %s\n",name);
+}      
+           
+char *isenbledel(char *name){
+    static char filename[256];
+    memset(filename,0,256);
+    //--判断文件名是否完整，如果不完整，则补全
+    if (name==NULL || strcmp(name,"")==0) return NULL;
+    else if (name[0]!='.') sprintf(filename,"./%s",name);
+    else if (name[1]!='/') {
+       if (name[2]=='/') sprintf(filename,"%s",name);
+       else sprintf(filename,"./%s",name);
+    }
+    else 
+       sprintf(filename,"%s",name);
+    return filename;
+}
+     
+     
+int main(int argc,char **argv){
+    char **ls=NULL;
+    for(i=1;i<argc;i++){
+       if (argv[i][0]=='-'){
+          isf=strstr(argv[i],"f")?1:0;
+          isr=strstr(argv[i],"r")?1:0;
+          isv=strstr(argv[i],"v")?1:0;
+       }
+       else {
+          ls=&argv[i];
+          break;
+       }
+    }
+    i=0;
+    char cmd[256];
+    while(ls[i]!=NULL){
+      char *pathname=isenbledel(ls[i++]);
+      if (pathname==NULL) continue;
+      if (isf==0){
+         printf("delete no[yes]\n");
+         scanf("%s",cmd);
+         if (strcmp(cmd,"yes")!=0) continue;
+      }
+      if (isr==0){
+         struct stat st;
+         stat(pathname,&st);
+         if (S_ISDIR(st.st_mode)) {
+            printf("dir isn't deleted\n");
+            continue;
+         }
+      }
+      startdel(pathname,isv);
+    }
+  }
+    
+}     
+     
+ 
+ 6).文件指针移动
+     当文件读写数据时，文件指针自动移动，也可以通过函数来改变文件指针位置
+     off_t lseek(int filedes,off_t offset,int whence);
+     参数：filedes 描述符
+           offset:偏移量
+           whence:从哪里开始
+               SEEK_SET  0  从头开始
+               SEEK_CUR  1  当前位置
+               SEEK_END  2  从尾开始
+     返回值：是移动后当前所在位置，即字节数
+     
+    
+    练习：用两种方法读取wav文件头
+    (1)结构体方法
+    (2)文件指针移动法
+    
+    struct WAV{
+       char riff[4]; //RIFF
+       long len;     //文件大小
+       char type[4]; //WAVE
+       char fmt[4];  //fmt 
+       char tmp[4];  //空出的
+       short pcm;
+       short channel;//声道数
+       long sample;  //采样率  speed
+       long rate;    //传送速率
+       short framesize; //调整数
+       short bit;    //样本位数
+       char data[4]; //data
+       long dblen;   //len-sizeof(struct WAV);  
+    };
+    
+    采样,获取音频数据
+    采样样本，即一帧数据
+    采样率，即每秒的帧数
+    格式，采样位数，即每一帧每一声道所占的内存空间
+    声道，双声道、单声道
+    
+    t秒内的字节数
+    字节数=t * sample * bit *channel /8;
+    t=字节数/(sample * bit *channel /8);
+    
+    传送速率= sample * bit *channel /8; 即一秒中的字节数
+    调整数=channel*bit /8; 一帧的字节数
+    
+    
+    方法一     
+    int main(int argc,char **argv){
+        //打开文件
+        int fd=open(argv[1],O_RDONLY);
+        if (fd==-1){
+           printf("----- open err=%s\n",strerror(errno));
+           return -1;
+        }
+        //wav_t *p=(wav_t*)malloc(sizeof(wav_t));
+        //wav_t a,*p=&a;
+        char buf[4096];
+        wav_t *p=(wav_t*)buf;
+        int size=read(fd,p,sizeof(wav_t));
+        close(fd);
+        printf("---%s,%d,%d,%d\n",p->type,p->channel,p->sample,p->bit);
+        printf("---%d,%d\n",p->len,p->dblen);
+    }
+    
+    方法二  ***
+    int main(int argc,char **argv){
+        //打开文件
+        int fd=open(argv[1],O_RDONLY);
+        if (fd==-1){
+           printf("----- open err=%s\n",strerror(errno));
+           return -1;
+        }
+        char type[5]={0};
+        short channel;
+        short bit;
+        int sample;
+        lseek(fd,0x08,0);
+        read(fd,type,4);
+        lseek(fd,0x16,0);
+        read(fd,&channel,2);
+        read(fd,&sample,4);
+        lseek(fd,0x22,0);
+        read(fd,&bit,2);
+        close(fd);
+        printf("--- %s,%d,%d,%d\n",type,channel,sample,bit);
+    }   
+ 
+ 7)其它常用函数  
+     //更改系统掩码   
+     mode_t umask(mode_t mask);
+     //修改文件权限
+     int chmod(const char *path, mode_t mode); //修改没被打开的文件或目录权限
+     int fchmod(int fildes, mode_t mode); //修改已打开的文件权限
+     //*** 截断，修改文件长度   length 长度 ，如果变长，则自动补0
+     int truncate(const char *path, off_t length);
+     int ftruncate(int fd, off_t length);
+     //创建硬链接 增加节点  对应的是unlink
+     int link(const char *oldpath, const char *newpath);
+     //删除移除文件或空目录   rmdir 删空目录  unlink删文件 
+     int remove(const char *pathname);
+     //重命名
+     int rename(const  char  *oldpath,  const char *new-path);
+
+   
+////////////////////////////////////////////////////////////////////////////
+(四)设备控制
+     #include <sys/ioctl.h>
+     //控制硬件设备，即设置硬件或从硬件中获取信息
+     int ioctl(int fd,int request,...);
+     参数：fd 设备描述符
+           request  是控制指令，通常是一些特定的宏或宏函数
+           ...      通常代表是多个参数，在这里是补充参数，实质最多只有一个参数
+                    一个内存地址           
+     返回值：0成功，非零 失败
+     
+     通常一个设备都会提供一个头文件，这个文件大多数提供宏. 当做指令
+     例如
+         #define LED_ON  1  //开灯
+         #define LED_OFF 0  //关灯
+         #define LED_STATE 2
+         int index=3;
+         ioctl(fd,LED_ON,&index); //开第三个灯
+         int state;
+         ioctl(fd,LED_STATE,&state);//获取状态
+     
+1.混音器音量控制
+         /dev/mixer
+         
+     对混音器的操作一般都通过ioctl系统调用来完成，常用控制命令如下：
+     #include <linux/soundcard.h>    
+     SOUND_MIXER_VOLUME   	主音量调节
+     SOUND_MIXER_BASS       低音控制
+     SOUND_MIXER_TREBLE    	高音控制
+     SOUND_MIXER_SYNTH     	FM合成器
+     SOUND_MIXER_PCM          	主D/A转换器
+     SOUND_MIXER_SPEAKER   	PC喇叭
+     SOUND_MIXER_LINE          	音频线输入
+     SOUND_MIXER_MIC            	麦克风输入
+     SOUND_MIXER_CD             	CD输入
+     SOUND_MIXER_IMIX           	放音音量
+     SOUND_MIXER_ALTPCM    	从D/A 转换器
+     SOUND_MIXER_RECLEV    	录音音量
+     SOUND_MIXER_IGAIN    	输入增益
+     SOUND_MIXER_OGAIN  	  输出增益
+     SOUND_MIXER_LINE1    	声卡的第1输入
+
+    以上控制取值范围都是0-100之间的数据，而按制的输入或输出，采用如下两个宏函数：
+         SOUND_MIXER_READ()   读取混音通道的增益大小
+         SOUND_MIXER_WRITE()  写入混音通道的增益大小
+     如：
+         //代表从设备中获取麦克风的输入增益
+         SOUND_MIXER_READ(SOUND_MIXER_MIC)
+         //代表向设置设备的主音量大小
+         SOUND_MIXER_WRITE(SOUND_MIXER_VOLUME) 
+   
+     对于增益值的数据，保存在16位数据中，其中：  
+     对于只有一个混音通道的单声道设备来说，增益大小保存在低位字节中。
+     对于支持多个混音通道的双声道设备来说，增益大小实际上包括两个部分，分别代表左、右两个声道的值，其中低位字节保存左声道的音量，而高位字节则保存右声道的音量。
+    
+     音量 0-100 1字节
+     
+ int main(int argc,char **argv){
+    int fd=open("/dev/mixer",O_RDWR);
+    if (fd==-1){
+       printf("--- open err=%s\n",strerror(errno));
+       return -1;
+    }
+    int vol;
+    ioctl(fd,MIXER_READ(SOUND_MIXER_VOLUME),&vol);
+    int lvol=vol&0xff,rvol=(vol>>8)&0xff;
+    printf("%x,left=%d,right=%d\n",vol,lvol,rvol);
+    scanf("%d %d",&lvol,&rvol);
+    vol=rvol<<8 | lvol;
+    ioctl(fd,MIXER_WRITE(SOUND_MIXER_VOLUME),&vol);
+}   
+         
+              
+2.音频设备采样控制
+  采样频率
+  声道
+  位数
+  
+     #include <linux/soundcard.h>
+     SNDCTL_DSP_SETFMT   	  采样大小，也称采样格式 8,16
+     SNDCTL_DSP_SPEED     	采样频率 8000, 11025, 22050, 32000, 44100, 48000 …
+     SNDCTL_DSP_CHANNELS   	设置声道数目 1,2 				
+     SNDCTL_DSP_RESET       	DSP复位
+     SNDCTL_DSP_STEREO   	  立体声   0,1
+     SOUND_PCM_READ_RATE   	设置PCM转换速度 		
+     SNDCTL_DSP_GETBLKSIZE   	设置DSP块空间的大小 
+     SNDCTL_DSP_SETFRAGMENT 	设置声卡驱动程序中的内核缓冲区的大
+     SNDCTL_DSP_SYNC        	控制读写文件同步 
+     SNDCTL_DSP_GETOSPACE   	获取输出空间 
+     SNDCTL_DSP_GETISPACE   	获取输入空间 
+     
+
+int main(int argc,char **argv){
+    printf("---- size=%d\n",sizeof(wav_t));
+
+    int wavfd=open(argv[1],O_CREAT | O_WRONLY);
+    if (wavfd==-1){
+       printf("---- open dsp err=%s\n",strerror(errno));
+       return -1;
+    }
+    int speed=44100;
+    int bit=16;
+    int channel=2;
+    wav_t head={"RIFF",44,"WAVE","fmt ",0,0x10,channel,speed,speed*bit*channel/8,channel*bit/8,bit,"data",0};
+    int fd=open("/dev/dsp",O_RDONLY);
+    if (fd==-1){
+       printf("---- open dsp err=%s\n",strerror(errno));
+       return -1;
+    }
+    ioctl(fd,SNDCTL_DSP_SPEED,&speed);
+    ioctl(fd,SNDCTL_DSP_CHANNELS,&channel);
+    ioctl(fd,SNDCTL_DSP_SETFMT,&bit);
+    write(wavfd,&head,sizeof(head));
+    char buf[4096];
+    int len=0,t=0;
+    while(1){
+       int size=read(fd,buf,4096);
+       write(wavfd,buf,size);
+       len+=size;
+       t=len/(channel*bit*speed/8);
+       if (t>=10) break;
+    }
+    int all=len+44;
+    lseek(wavfd,0x04,0);
+    write(wavfd,&all,4);
+    lseek(wavfd,0x28,0);
+    write(wavfd,&len,4);
+    close(wavfd);
+    close(fd);
+}
+
+
+   作业：实wav播放 
+
+///////////////////////////////////////////////////////////////////
+二、线程编程
+    程序：在磁盘上的可执行的文件
+    进程：在内存中运行的程序，一个程可以在内存被加载无数次
+    线程：是进程的一部分，在进程中，由CPU独立运行的代码块
+    
+ run(){ //如果想让CPU独立运行，使用pthread_create来通知CPU运行这个函数
+        //这个函数就是线程
+ }  
+  
+ int main(){ //本身就是一个线程，称为主线程
+ } 
+ 
+    main是主线程入口，run是子线程入口。其它函数都是被程序的入口调用的  
+
+    线程的作用：是让代码并行运行
+    
+
+1.线程的生命周期 ****
+  线程的创建，可以在主线程中或其它线程中任意位置来创建
+  线程的结束，就是线程函数的结束
+  
+     线程的生命周期包括：就绪、运行、阻塞、终止
+     就绪：线程能够运行，但是在等待可用的处理器。可能刚刚启动，或者刚刚从阻塞中恢复，或者被其它线程抢占。
+     运行：线程正在运行。在单处理器系统中，只能有一个线程处于运行状态，在多处理器系统中，可能有多个线程处于运行态。
+     阻塞：线程由于等待“处理器”外的其它条件而无法运行，如：条件变量的改变，加锁互质量或者等待I/O操作结束。
+     终止：线程从线程函数中返回，或者调用pthread_exit，或者被取消，或随进程的终止而终止。线程终止后会完成所有的清理工作。
+
+
+2.线程的唯一标识
+    就是线程的编号
+    线程ID用于唯一识别哪一个线程。线程ID用pthread_t类型来表示,在线程中，可以用如下函数获取线程ID：
+    //获取线程ID
+    Pthread_t pthread_self(void);
+    在线程内部读取，其它线程无法读取
+1)线程的创建    
+    #include <pthread.h>
+    //创建线程
+    int pthread_create(pthread_t *thread,const pthread_attr_t *attr,  void *(*start_routine)(void*),void * arg);
+    参数：thread 线程id的地址，在创建线程时，产生ID
+          attr   属性 优先级
+          start_routine 用来指定线程函数 void *(*)(void*)类型代表了函数必须有void* 返回，必须有void*形参
+          arg    是线程函数的参数
+   
+2)线程的终止
+   （1）线程函数自然结束  自然死亡
+   （2）在线程函数中使用return 自杀
+        线程函数内调用下面函数
+        void pthread_exit(void *value_ptr);   
+   （3）在其它线程使用下面函数 他杀
+        int pthread_cancel(pthread_t thread);
+   （4）随进程终止而终止  陪葬
+3)等待线程结束  收尸
+    //等待线程结束，如果这个线程没有结束，则函数处于阻塞模式
+    int pthread_join(pthread_t thread, void **value_ptr);  
+    参数： thread 已创建的线程ID号
+           value_ptr: 是线程返回值的地址     
+         
+ 
+ 
+ 用法：
+ 需要代码并行执行，则创建线程
+ 线程函数：循环(超过0.2秒)  如音频播
+           耗时代码 (超过0.2秒)
+ 终止：
+     自然死亡  循环可以自已结束，或没有循环
+     自杀      循环的结束是根据特定条件结束
+     他杀      循环永远无法结束，或来不及等待结束
+     
+ 等待结束：
+     为了避免线程没有结束时，就操作其它与线程相关的操作
+ 
+1）线程的简单用法.
+    //mplay.c
+    #include <stdio.h>
+    #include <stdlib.h>
+    #include <string.h>
+    static int (*sendstate)(int,int);
+    static int state;  //0 停止  1播放  2暂停
+    static pthread_t id;
+    void* run(void* arg){
+        int i=0;
+        int size=180;
+        while(state){
+           while(state==2) usleep(20000);//微秒
+           //1) 读取磁盘文件
+           //2) 解码
+           //3) 写入声卡
+           //4) 调用回调，将数据传入到UI层
+           sendstate(state,i++);
+           if (i>=size) break;
+           sleep(1);
+        }
+        state=0;
+        sendstate(state,i++); 
+        return (void*)120;   
+    }
+    int play(char *file,int (*handler)(int,int)){
+        if (state==0){
+           //1.保存函数地址到全局
+           sendstate=handler;
+           state=1;
+           //2.启动一个循环           
+           pthread_create(&id,NULL,run,NULL); //创建线程
+        }
+        else state=1;
+    }    
+    int pause(){
+        state=2;
+        sendstate(state,0);
+    }    
+    int stop(){
+        state=0;
+        sendstate(state,0);
+        int *a;
+        pthread_join(id,&a);//等待结束
+        printf("---- %d\n",a);//值为120
+    }
+    
+
+2）线程函数的参数.
+    格式
+    void * 函数名(void *参数){
+    }
+    函数参数，是在创建线程由arg决定
+
+    传整型
+    void *run(void* arg){
+        int a=*((int*)arg);
+        while(1){
+           printf("------- pthread %d\n",a);
+           sleep(1);
+        }
+    }
+    
+    int main(int argc,char **argv){
+        //pthread_t id[5];
+        int i;
+        for(i=0;i<5;i++){
+           pthread_t id;
+           pthread_create(&id,NULL,run,&i); //非阻塞
+           usleep(200);
+       }
+        int b;
+        scanf("%d",&b);
+    }
+    
+    传数组
+    void *run(void* arg){
+        //int *p=(int*)malloc(4*7);
+        int p[7];
+        memcpy(p,arg,4*7);
+        int i=0;
+        while(1){
+           printf("------- pthread %d\n",p[i++%7]);
+           sleep(1);
+        }
+        //free(p);
+    }
+    int main(int argc,char **argv){
+    
+        int a[]={1,2,3,4,5,6,7};
+        int i;
+        //for(i=0;i<5;i++){
+           pthread_t id;
+           pthread_create(&id,NULL,run,a); //非阻塞
+           usleep(200);
+       //}
+        int b;
+        scanf("%d",&b);
+    }
+    原则，尽快的将arg指向的内存数据拷到线程函数，以免在主函数中将arg指向的值改变。
+
+
+
+3）线程属性的设置
+   线程创建时，默认优先级为0  最大为50
+
+   pthread_attr_t属性的类型
+   typedef struct
+    {
+        int detachstate; 	//线程的分离状态
+        int schedpolicy; 	//线程调度策略
+        struct sched_param  schedparam;   //线程的调度参数，优先级
+        int inheritsched;	//线程的继承性
+        int scope;        //线程的作用域
+        size_t guardsize;	//线程栈末尾的警戒缓冲区大小
+        int stackaddr_set; 
+        void * stackaddr; 	//设置线程栈的地址
+        size_t stacksize; 	//设置线程栈的大小
+    }pthread_attr_t;
+
+   
+   //初始化线程属性
+　 int pthread_attr_init ( pthread_attr_t *attr );
+   //销毁线程属性
+   int pthread_attr_destroy ( pthread_attr_t *attr );
+
+    (2) 线程优先级
+    
+    
+    //设置优先级结构体 
+    int pthread_attr_setschedparam(pthread_attr_t *attr,const struct sched_param *param);
+    int pthread_attr_getschedparam(const pthread_attr_t *attr,struct sched_param *param);
+    struct sched_param结构如下：
+    struct sched_param{   
+       int __sched_priority; //所要设定的线程优先级
+    };
+
+
+int main(int argc,char **argv){
+    int i;
+    pthread_t id[5];
+    pthread_attr_t attr;
+    pthread_attr_init (&attr);
+    struct sched_param par={50};
+    pthread_attr_setschedparam(&attr,&par);
+    for(i=0;i<5;i++){
+       if (i==2) pthread_create(&id[i],NULL,run,&i); //创建线程，默认优先级
+       else  pthread_create(&id[i],&attr,run,&i); //创建线程，同时设优先级
+       usleep(200000);
+    }
+    pthread_attr_destroy(&attr);
+    int b;
+    scanf("%d",&b);
+}
+ 
+///////////////////////////////////////////////////////////////////////////
+总结：
+   c 
+   数据类型: 
+       基本类型:int char short long  double float
+       自定义类型:指针(指针变量、数组的指针、函数指针、指针指针、...)、结构、联合、枚举、类
+   1)基本类型    
+       123
+       0123   1*64+2*8+3
+       0x123  1*16*16+2*16+3
+       0L
+       -1U   0xffffffff
+       
+       unsigned
+       signed
+       
+       123.0 
+       123e+0
+       0.123e+3       
+       
+int main(int argc,char **argv){
+    /*
+    float a=123.0;
+    printf("----- %x\n",*((int*)&a));
+    unsigned char *b=(char*)&a;
+    printf("----- %x %x %x %x\n",b[0],b[1],b[2],b[3]);
+    */
+    union {
+       float a;
+       int c;
+       unsigned char b[4];
+    } x;
+    x.a=123.0;
+    printf("----- %x\n",x.c);
+    printf("----- %x %x %x %x\n",x.b[0],x.b[1],x.b[2],x.b[3]);
+}
+       
+    2)自定义类型:
+    (1)指针
+      int   a[12]; a是常量
+      int  *p=a;   p是变量
+      int*  a[12];
+      int* *p=a;
+      int (*  a[12])(int);
+      int (*  *p)(int)=a;
+      int     a[3][4];
+      int (*  p)[4]=a;
+      
+      int**(**p)(int**a);   //p是函数指针的指针  返回指针数组  参数是指针数组
+      int**(**p)(int*a[]);  //a是变量
+    
+    (2)枚举
+       typedef enum aa {stop,start,pause} aa_t;  //aa_t是类型名 stop,start,pause是常量名，只是别名
+       
+       #define stop  0    //stop 不占内存
+       #define start 1
+       #define pause 2
+       
+       const int stop=0;  //stop 本质是只读变量 栈或数据段
+       const int start=1;
+       const int pause=2;
+       
+    (3)结构
+       typedef struct aaa{
+       public: //平时省略
+          int b;
+          double c; 
+          int (*max)(int x,int y);
+       } aa_t;
+       
+       用途：**数据或文件头
+               管理多个变量
+             **面向结构编程(用结构体做接口)  
+          
+       
+     (4)类  
+      class aa_t{
+      public:
+          int b;
+          double c;
+          int max(int x,int y){
+              return x>y?x:y;
+          }
+      };
+      
+    运算符
+      算术 + - * / % ++ --
+           -  a=-b;  a-=b; a=a-b;   
+           /  不能除0  整数除整数还是整数
+           %  两侧必须是整数  符号被除数决定 
+               -29%7  -1
+           ++ -- 
+              ++i 先加后用
+              i++ 先用后加
+              
+           a=2,b=3,c=4;
+           a*b+++c
+           a*b+(++c)  11  5
+           a*b+(c++)  10  5
+           
+           int a[12],*p=a;
+           a++  //错  a是常量
+           p++  //对  
+           
+           class b{
+              char *str;
+           } a[5]={"asf","fsa","ggg","aaa","ddd"},*p=&a;
+           p++->str  //asf p是fsa地址  p++
+           ++p->str  //sf  p没变  ++str
+           p->str++  //asf p没变  str++ 
+           (++p)->str//fsa p是fsa地址  ++p
+           
+       赋值 = += -= *= /= %= ^= |= &=
+           int a=b=c=d=e=9; //错 因为b,c,d,e没有被定义
+           int b,c,d,e,a=b=c=d=e=9; //对    
+                       
+           不能给常量或表达式赋值
+           
+           a+b=t*r+a=5=9 //错         
+           
+       关系 > >= < <= == !=
+           运算结果为真和假
+           if (a=-1){ //注意
+           }        
+           
+       逻辑 !  &&   ||
+           a=10;
+           !a+3*9+3; //30
+           
+           短路
+           int a=2,b=3,c=4,d=5,e=6
+           a+++b>c || c++< d*e  //c的值没变
+           
+       比较 ?:
+           int ww=5,hh=6,screen_w=480,screen_h=272;
+           int w=3,h=22;
+           w=w>ww?ww>screen_w?screen_w:ww:w>screen_w?screen_w:w;
+           h=h>hh?hh:h;
+           w=w>ww?(ww>screen_w?screen_w:ww):(w>screen_w?screen_w:w);
+           
+       内存大小
+           sizeof(类型或变量名)
+           double *p;
+           sizeof(p)  //4 看是的p的内存大小
+           double a[12];
+           sizeof(a); //96 看的是a数组总大小
+           
+           char buf[256]={0};
+           char *p=buf;
+           sizeof(buf);//256
+           sizeof(p);  //4
+           
+           strlen 字符串长度
+           strlen(buf);//0
+           
+       下标 []
+           int a[12];
+           a[i] == *(a+i)    
+           int a[3][4];
+           a[i][j] == *(*(a+i)+j) == a[0][i*4+j] == *( *a+i*4+j)
+           
+           i=k/m; //k当成1维的序号  i,j 看做二维的行和列 m是一行中的列数
+           j=k%m;
+           k=i*m+j
+           
+           
+     高编：
+          目录：创建 mkdir、删除rmdir、获取当前目录getcwd、获取程序目录readlink
+                打开 opendir、关闭closedir、读取readdir、获取状态stat
+          文件：打开open、读read、写write、关闭close、移动光标lseek、判断文件存在access、控制ioctl
+                创建creat、删除remove unlink、截断truncate、权限chmod、重命名rename、创建快捷link
+          线程：创建pthread_create、等待结束pthread_join、退出线程pthread_exit、取消线程pthread_cancel
+                
+/////////////////////////////////////////////////////////////////////////////
+ 线程  锁、同步                      
+1)   互斥:互相排斥 多个线程竞争同一个资源(内存)                       
+     方法：锁
+           pthread_mutex_t
+           
+           int  pthread_mutex_destroy(pthread_mutex_t *mutex); 
+           int  pthread_mutex_init(pthread_mutex_t  *mutex,const pthread_mutexattr_t   * attr);
+           //参数 mutex 锁的地址
+                  attr  锁的属性 通常设为NULL
+           int pthread_mutex_lock(pthread_mutex_t *mutex);   //加锁
+           int pthread_mutex_unlock(pthread_mutex_t *mutex); //解锁
+           
+     怎么用函数
+           pthread_mutex_init 准备工作  创建线程之前准备好
+           pthread_mutex_destroy 善后工作 程序关闭前销毁
+           
+           pthread_mutex_lock 访问共享资之前加锁，pthread_mutex_unlock 访问完后解锁  
+           注意：不要出现死锁(小窗户)
+           
+#include <stdio.h>
+#include <stdlib.h>
+#include <pthread.h>
+pthread_mutex_t mutex;
+int a;
+void * run1(void *arg){
+    while(1){
+       pthread_mutex_lock(&mutex);
+       a+=5;
+       printf("-------run1 %d\n",a);
+       sleep(1);
+       pthread_mutex_unlock(&mutex);
+       usleep(1);
+    }
+}
+
+void * run2(void *arg){
+    while(1){
+       pthread_mutex_lock(&mutex);
+       a-=1;
+       printf("-------run2 %d\n",a);
+       sleep(4);
+       pthread_mutex_unlock(&mutex);
+       usleep(1);
+    }
+}
+
+int main(int argc,char **argv){
+    pthread_mutex_init(&mutex,NULL);
+    pthread_t pid[2];
+    pthread_create(&pid[0],NULL,run1,NULL);
+    pthread_create(&pid[1],NULL,run2,NULL);
+    pthread_join(pid[0],NULL);
+    pthread_mutex_destroy(&mutex);
+}
+           
+               
+2)  同步  
+    同步：步调一致，本质是一个线程指挥或控制另一个线程。  
+    条件变量:  pthread_cond_t 
+    
+     int pthread_cond_destroy(pthread_cond_t *cond);
+     int pthread_cond_init(pthread_cond_t *cond, const pthread_condattr_t *attr);
+     //参数  cond 条件变量指针
+             attr 属性，通常设为NULL
+     int pthread_cond_wait(pthread_cond_t *cond,pthread_mutex_t * mutex); //睡眠
+     //参数  cond 条件变量
+             mutex 锁
+             当前符合条时，则先进行解锁，然后进入睡眠状态(阻塞)
+             当这个函数被唤醒,函数先加锁，然后向下运行
+     int pthread_cond_signal(pthread_cond_t *cond); //唤醒
+             
+        
+ #include <stdio.h>
+#include <stdlib.h>
+#include <pthread.h>
+pthread_mutex_t mutex;
+pthread_cond_t  cond;
+int rice;
+void * make(void *arg){
+    while(1){
+       pthread_mutex_lock(&mutex);
+       rice+=1;
+       printf("---- make 做做做，又做了一碗，现在有%d碗了\n",rice);
+       if (rice >10){
+           printf("---- make 快起来吃饭\n");
+           pthread_cond_signal(&cond);
+       }
+       pthread_mutex_unlock(&mutex);
+       sleep(1);
+    }
+}
+
+void * eat(void *arg){
+    while(1){
+       pthread_mutex_lock(&mutex);
+       if (rice<3) {
+          printf("---- eat 现在%d碗，不够吃了，睡觉去\n");
+          pthread_cond_wait(&cond,&mutex);
+       }
+       rice-=3;
+       printf("---- eat 吃了3碗，还有%d\n",rice);
+       pthread_mutex_unlock(&mutex);
+       sleep(1);
+    }
+}
+
+int main(int argc,char **argv){
+    pthread_mutex_init(&mutex,NULL);
+    pthread_cond_init(&cond,NULL);
+    pthread_t pid[2];
+    pthread_create(&pid[0],NULL,make,NULL);
+    pthread_create(&pid[1],NULL,eat,NULL);
+    pthread_join(pid[0],NULL);
+    pthread_mutex_destroy(&mutex);
+    pthread_cond_destroy(&cond);
+}
+              
+               
+3)  信号量                 
+    信号量本质：是一个非负整数
+    可以用来实现锁、同步
+    PV操作
+    P 如果信号量值为0，则阻塞，否就是将信号量减1
+    V 就是将信号量值加1
+    
+    信号量类型 sem_t
+    //信号量初始化
+    int sem_init(sem_t *sem, int pshared, unsigned int value);
+    参数: sem 是信号量指针
+          pshared 共享方式  
+               0 表示信号量只在当前进程中使用(线程)
+               1 表示信号量在多相进程中使用
+          value 信号量的初始值，通常被置为       
+                
+    //销毁信号量
+    int sem_destroy(sem_t *sem);
+    
+    //p操作,减少信号量
+    int sem_wait(sem_t *sem); 
+    //V操作，增加信号量
+    int sem_post(sem_t *sem);
+
+
+
+#include <stdio.h>
+#include <stdlib.h>
+#include <pthread.h>
+#include <semaphore.h>
+
+sem_t sem;
+sem_t mutex;
+int rice;
+void * make(void *arg){
+    while(1){
+       sem_wait(&mutex);
+       rice+=1;
+       printf("---- make 做做做，又做了一碗，现在有%d碗了\n",rice);
+       if (rice >10){
+           printf("---- make 快起来吃饭\n");
+           sem_post(&sem);//V
+       }
+       sem_post(&mutex);
+       sleep(1);
+    }
+}
+
+void * eat(void *arg){
+    while(1){
+       sem_wait(&mutex);
+       if (rice<3) {
+          printf("---- eat 现在%d碗，不够吃了，睡觉去\n");
+          sem_post(&mutex);
+          sem_wait(&sem);//P
+          sem_wait(&mutex);
+       }
+       rice-=3;
+       printf("---- eat 吃了3碗，还有%d\n",rice);
+       sem_post(&mutex);
+       sleep(1);
+    }
+}
+
+int main(int argc,char **argv){
+    sem_init(&sem,0,0);
+    sem_init(&mutex,0,1);
+    pthread_t pid[2];
+    pthread_create(&pid[0],NULL,make,NULL);
+    pthread_create(&pid[1],NULL,eat,NULL);
+    pthread_join(pid[0],NULL);
+
+    sem_destroy(&sem);
+    sem_destroy(&mutex);
+}
+////////////////////////////////////////////////////////////////////////////
+常用的时间函数
+   //睡s秒
+   sleep(int s);
+
+   //睡us微秒  1秒=1000毫秒=1000000微秒
+   usleep(int us);
+   
+   //获取当前系统时间 返回整型 单位秒 UTC
+   time_t time(time_t *t); 
+   参数：time_t 是整型类型 
+  
+   //返回北京时间
+   struct tm *localtime(time_t *t);  
+   struct tm {
+   	  int tm_sec; //秒
+   	  int tm_min; //分
+   	  int tm_hour; //时
+   	  int tm_mday; //日
+   	  int tm_mon;  //月  从0 
+   	  int tm_year; //年  从1900年算起 0  1901年 1
+   	  int tm_wday; //星期几
+   	  int tm_yday; //一年的第几天   	  
+    };    
+
+int main(int argc,char **argv){
+   time_t t;
+   time(&t);
+   printf("------ %d\n",t);
+   struct tm *pt=localtime(&t);
+   printf("%d-%d-%d %d:%d:%d %d\n",pt->tm_year+1900,pt->tm_mon+1,pt->tm_mday,pt->tm_hour,pt->tm_min,pt->tm_sec,pt->tm_wday);
+}
+  
+          
+               
+   //把当前时间用结构体返回，当地时间放在tz结构中
+   int gettimeofday(struct  timeval*tv,struct  timezone *tz ) 
+   参数: tv 是struct timeval结构指针
+            tz 是struct timezone结构指针 当地址时存在tz结构中
+            struct timeval{****
+                 long  tv_sec;/*秒*/
+                 long  tv_usec;/*微妙*/
+            };      
+            struct timezone{
+                 int tz_minuteswest;/*和greenwich 时间差了多少分钟*/
+                 int tz_dsttime;    /*type of DST correction*/
+            }
+ 
+ int main(int argc,char **argv){
+    int i=0;
+    while(1){
+      struct timeval t1;//开始时间
+      gettimeofday(&t1,NULL);
+      printf("---- %d\n",i++); //显示图片
+      long long tsec=1000000;
+      struct timeval t2;//结束时间
+      gettimeofday(&t2,NULL);
+      int deff= t2.sec*tsec+t2.usec -(t1.sec*tsec+t1.usec);
+      usleep(1000000/8-deff);
+    } 
+}  
+
+    //计算随机值   返回的32位整型  每次程序重新运行时，随机值相同
+    int rand(void);
+    //随机种子 通常用时间当种子
+    void srand(unsigned int seed);
+
+    随机值为0-100   -50 至 50   0 - 1
+   
+   int main(int argc,char **argv){
+    time_t t;
+    time(&t);
+    srand(t);
+    int i=0;
+    for(i=0;i<10;i++) {
+      //int a=rand()%100-50;
+      double a=(double)rand()/0xffffffff;
+      printf("--- %lf\n",a);
+    }
+   }
+////////////////////////////////////////////////////////////////
+项目：播放器
+   做过哪些项目？
+      音频录放项目：音频播放器，录音机、复读机等
+   播放器是如何实现的?
+      模块如何划分、接口如何定制、数据流程
+      
+      模块划分：分了三大部分，UI、中间件、驱动
+         UI实现界面
+         中间件实现的功能，为UI层提供接口（函数）
+         中间件分为三个子模块，控制模块、AO模块、IO模块
+         AO实现了音频数据的采集、音频播放数据的输出，并为控制模块提供接口
+         IO模块实现了音频文件的控制
+         控制模块，实现了数据的流程控制、为UI层供接口
+   如何实现控制?  
+      启动了线程，在线程中调用了ao模块接口，将采集来的数据，再通过io模块接口的调用，生成音频文件
+   这里面都用到了哪些技术？
+      多线程，设备和文件控制、音频的编解码技术
+      
+   简历:
+      音频录放项目，包括音频播放器，录音机、复读机等  
+      功能：实现了音频的播放、录音....等功能，共划分...模块
+      职责：负责接口的定制，协议的定制，代码的编写，实现的音频播放库
+            负责模块划分、接口的定制、核心代码的编写
+
+//////////////////////////////////////////////////////////////////////
+三、进程
+    源码：磁盘上.c文件
+    程序：磁盘上可执行文件,编译后生成的
+    线程：在进程中，由CPU独立运行的程序块
+    进程：在内存中，运行的程序。一个程序产生多个进程.
+ 
+1.基本概念    
+    进程分类：用户进程、守护进程（精灵进程）、批处理进程三类。
+    进程属性：
+    1)ps 
+        ps -Al
+        
+F S   UID   PID  PPID  C PRI  NI ADDR SZ WCHAN  TTY          TIME CMD
+4 S     0     1     0  0  75   0 -   509 -      ?        00:00:00 init
+1 S     0     2     1  0 -40   - -     0 migrat ?        00:00:00 migratio
+    
+    UID 用户ID
+    PID 进程ID
+    PPID 父进程ID 任何一个进程都是由其它进程创建。
+    WCHAN 进程状态
+    TTY   终端
+    
+    0号进程：是原始进程
+    1号进程：用于系统初始工作，由原始进程调用
+     
+    进程ID号可以重用，原进程被关了，则这个进程号可以给其它进程使用
+    
+    2)pstree 显示进程树
+       进程树体现的进程与父进程的关系
+       
+    3)进程组
+      前台：在终端中，正在运行程序，其它动作无法操作。 ./test
+      后台：在终端中，程序运行，不会影响其它操作。     ./test&
+      
+      会话：一个登陆的用户，会话开始于用户登录，终止与用户退出
+      会话中可以有多个进程组，只能有一个前台进程组
+      每一个进程组，可以有一个或多个进程。当组内所有进程都结束时，进程组则消失。
+      每一个进程组，都有一个父进程。组内每一个进程(除父进程)都可以创建进程组
+     
+    4)进程启动
+      (1)手动 
+           前台: ./test
+           后台: ./test&
+      (2)自动
+         (1)开机时自动运行：
+              /etc/rc.d/sysinit  系统初始化脚本
+              /etc/rc.d/local    本地运行脚本
+              
+         (2)登陆时自动运行：
+           全局script
+              /ect/profile   常用
+           用户起始目录
+              /.bash_profile 常用
+              /.bash_login
+              /.profile
+         (3)退出登陆时自动运行：
+              /.bash_logout
+
+         (4)定期自动运行程序
+              /var/spool/cron目录下配置文件，系统会通过crond守护进程定期检查执行里面的文件
+                 
+    5)进程内存的镜像
+      物理内存：内存条、寄存器,都有自已物理的内存地址
+      
+      虚拟内存：每个进程，都占用4G的内存空间
+                     映射表
+                虚拟地址  物理地址
+                0xf433 --- 0x1101
+         
+      进程内存的镜像是指内存空间的分配
+        代码段：即二进制机器代码，代码段是只读的，可被多个进程共享。//程序的二进制
+        数据段：存储已经被初始化的变量                         int a=12; //编译时占程序大小   
+        未初化数据段：存储未被初始化的静态变量，也被称为BSS段；int a;    //编译时不占
+        堆：用于存放程序运行中动态分配的变量                             //new 或 malloc
+        栈：用于函数调用，保存函数返回地址、函数参数、函数内部定义的局部变量。 //变量
+        此外，高地址还存储了命令行参数与环境变量。   //main
+   
+     6)进程切换
+        内核的作用：管内存、管进程、管文件系统、管驱动、管硬件的程序  
+        
+        进程创建后不是马上执行，是放在了可执行队列(链表)
+        CPU对每个程序都要进行执行，所以采用时间片的方法，进行轮流运行
+        
+     7)进程的生命周期
+        创建、就续、运行、阻塞、结束
+        画图
+
+     8)进程模块
+        
+       在操作系统内，对每一个进程进行管理的数据结构称为进程控制模块(PCB)，主要描述当前进程状态和进程正在使用的资源。如下：
+       typedef struct task_struct{
+   	      int pid;               		//进程ID  用来标识进程
+   	      unsigned long state;     	//进程状态 描述当前进程运行状态
+   	      unsigned long count;    	//进程时间片数 
+   	      unsigned long timer;    	//进程休眠时间
+   	      unsigned long priority;  	//进程默认优先级 
+	        unsigned long content[20]; //进程执行现场保存区
+       }PCB; 
+
+       (1).进程创建
+          一个进程要被执行，首先被创建，进程需要一定的系统资源，如CPU时间片、内存空间、操作文件、硬件设备等。进程创建包括以下操作：
+          a.初始化当前进程PCB，分配有效进程ID，设置进程优先级和CPU时间片。
+          b.为进程分配内存空间
+          c.加载任务到内存空间，将进程代码复制到内核空间。
+          d.设置进程执行状态为就绪状态，将进程PCB放入到进程队列中。
+        
+       (2).进程队列
+       操作系统内核为方便对所有进程进行管理，进程的PCB被放在队列里，新创建的进程放入队尾，当进程执行完后，从队列中剔除。
+        运行队列：内核要寻找一个新的进程在CPU上运行时，必须只考虑处理可运行状态的进程，但扫描整个进程链表是相当低效的，所以引入了可运行状态进程的双向循环链表，也叫运行队列
+        等待队列：处于睡眠状态的进程被放入等待队列中，等待队列与进程调度机制紧密结合，能够用于实现核心的异步事件通知机制。
+        
+       (4).进程状态管理
+         在PCB结构中,进程状态成员记录了如下几种状态：
+
+         a.可执行状态  TASK_RUNNING(宏)
+           (RUNNING)状态、而将可执行但是尚未被调度执行的进程定义为就绪(READY)状态，这两种状态在linux下统一为 TASK_RUNNING状态。
+
+         b.可中断睡眠状态 TASK_INTERRUPTIBLE
+           进程被放入等待队列中。当事件发生时(由外部中断触发、或由其他进程触发)，对应的等待队列中的进程将被唤醒。
+           睡的时间长，但可被唤醒
+         
+         c.不可中断睡眠状态 TASK_UNINTERRUPTIBLE
+           不响应异步信号。在进程对某些硬件进行操作时，需要使用不可中断睡眠状态对进程进行保护，以避免进程与设备交互的过程被打断，造成设备陷入不可控的状态。
+           必须是睡眠时间较短的
+         d. 暂停状态 TASK_STOPPED
+            调试时的状调，gdb 断点
+         e. 跟踪状态  or TASK_TRACED
+            调试时的下一步  
+            
+         f. 僵尸状态 TASK_DEAD - EXIT_ZOMBIE
+            父进程创建了子进程，子进程死掉，则留下僵尸
+            父进程用wait系列的系统调用会顺便将子进程的尸体(task_struct)也释放掉。
+         g. 销毁状态 TASK_DEAD - EXIT_DEAD
+            退出过程不会产生僵尸，该进程彻底释放。
+
+      (5)进程调度
+         在PCB中有一个成员count进间片数，内核定期检是进程的运行状态
+         定时器会定期产生中断信号，在定时器中断处理程序中对当前执行进程的时间片count进行递减
+         当时间片用尽时，进程被挂起（进入等待队列），进行新进程调度，将CPU执行权交给新选进程。
+      (6).上下文切换
+         上下文是指上一个进程和下一个进程
+         进程调度选出新进程后，CPU就要进行进程上下文件切换，将新进程切换成当前执行进程
+         同时还要保存当前执行进程执行现场（即寄存器、堆、栈等），为下一次调度执行做准备。 
+   /////////////////////////////////////////////////////////////////////////////////////
+2.进程的操作
+   1)system系统调用
+         调用程序（指令）
+         int system(const char *command);
+         参数：用字符串括起来的指令
+         
+         用于调用程序，当前的进程将调用的进程当做子进程。
+         当子进程执行时，system处于阻塞状态，子进程结束时，当前进程继续向下执行。  
+ 
+     int main(int argc,char **argv){
+         system("./test");
+         int i=0;
+         while(1){
+            printf("--- aaa %d\n",i++);
+            sleep(1);
+         }
+     }
+   
+            
+   2)exec系列函数调用
+       int execl(const char *path, const char *arg, ...);
+       int execlp(const char *file, const char *arg, ...);
+       int execle(const char *path, const char *arg, ..., char * const envp[]);
+       int execv(const char *path, char *const argv[]);
+       int execvp(const char *file, char *const argv[]);
+       参数: path和file 都是有路径的文件
+             arg 第一个参数 代表指令
+             ... 其它参数，代表指令的后面的参数 最后一个参数设为NULL
+             argv含指令和参数的数组 最后一个元素一定设为NULL
+             envp环境变量数组
+             
+       用于调用程序，当前的进程被替换为将调用的进程。当前进程的PID成为了调用进程的PID
+       int main(int argc,char **argv){
+           //execl("/bin/ls","ls","-a",NULL);
+           //execl("./test","test",NULL);
+           char *a[]={"test",NULL};
+           execv("./test",a);           
+           int i=0;
+           while(1){
+              printf("--- aaa %d\n",i++);
+              sleep(1);
+           }
+       }       
+       
+   
+   
+   3)fork系统调用
+     (1)获取进程ID
+        int getpid(); //获取当前进程的PID
+        int getppid(); //获取父进程的PID
+        
+     (2)创建子进程
+        int fork();   //创建子进程
+        用于创新一个新的进程
+        是将原来的进程复制(PCB是新建，堆区、栈区、数据段复制了一份，文件描述符复制了一份)
+        代码段共用
+        
+        返回值：-1     代表失败
+                0      代表此时的进程是子进程
+                进程ID 代表此埋的进程是父进程
+        #include <stdio.h>
+        #include <unistd.h>
+        int a;
+        int main(int argc,char **argv){
+            printf("---- %d\n",getpid());
+            int pid=fork(); //创建了子进程，此时资源被复制，现场也复制一份
+                            //pid变量被赋了两次，父进程和子进程的pid同时被赋值
+                            //父进程中的pid是子进程的id,子进程pid是0
+            if (pid==-1) return 0; //创建失败
+            else if (pid >0){ //父进程中 pid大于
+               int i=0;
+               while(1){
+                 printf("---- %d\n",i++);
+                 sleep(1);
+               }
+            }
+            else { //子进程pid为0 
+               printf("----%d, %d\n",pid,getpid());
+            }
+        }         
+        
+     (3)等待进程结束
+        #include <linux/wait.h>
+        pid_t wait(int *status);  //等待任何一个子进程结束  阻塞
+        pid_t waitpid(pid_t pid, int *status, int options); //等待进程结束 可设置是否阻塞
+        用于在父进程中，等待子进程结束。这两函数都可实现阻塞模式
+        参数：status前8位是子进程返回的值（即main返回值）,后8位是系统传递的数据
+              pid   是指定的子进程id号   
+              options  WNOHANG   不阻塞，即使没有子进程退出,它也会立即返回
+                       WUNTRACED 如果子进程进入暂停，则马上返回
+                       0         阻塞，直到子进程结束
+ 
+
+        #include <stdio.h>
+        #include <unistd.h>
+        int a;
+        int main(int argc,char **argv){
+            printf("---- %d\n",getpid());
+            int pid=fork(); //创建了子进程，此时资源被复制，现场也复制一份
+                            //pid变量被赋了两次，父进程和子进程的pid同时被赋值
+                            //父进程中的pid是子进程的id,子进程pid是0
+            if (pid==-1) return 0; //创建失败
+            else if (pid ==0){
+               int i=0;
+               while(i<5){
+                 printf("---- %d\n",i++);
+                 sleep(1);
+               }
+               return 23;
+            }
+            else {
+               int val;
+               waitpid(pid,&val,0);
+               //wait(&val);
+               printf("----%d\n",val>>8);
+            }
+        }
+
+     
+   4)进程终止
+        （1）主函数结束
+             main结束 {}  自然死亡
+             在main函数使用 return 自杀
+        （2）exit函数
+             自杀
+             void exit(int status); //检查文件，并将缓冲区数据写入文件
+             void _exit(int status);//不检查文件，直接关
+             void _Exit(int status);//不检查文件，直接关
+             参数：是进程的返回值
+             
+             在程序的任何位置，或任何.c文件内使用，库中
+        （3）接收信号
+             他杀
+             ctrl+c   发送信号
+             kill PID 发送信号
+             
+             自杀
+             void abort(void); //用来给自已发送异常信号
+             在程序的任何位置，或任何.c文件内使用，库中
+             
+        （4）随最后一个线程死亡
+             自杀
+             在主线程中使用  pthread_exit(0);
+    
+        
+     进程终止处理函数
+         在进程终止前进行拦截，执行指定的函数
+          用于注册程序退出时调用的函数
+          int atexit(void (*function)(void));
+          参数：函数地址
+          
+ 
+        
+     接收信号处理函数
+          #include <signal.h>
+          typedef void (*sighandler_t)(int);
+          sighandler_t signal(int signum, sighandler_t handler);
+
+          kill -l查看信号
+          
+          SIGABRT
+
+#include <stdio.h>
+#include <stdlib.h>
+#include <unistd.h>
+#include <signal.h>
+
+char *p;
+int init(void){
+    p=malloc(4096);
+    printf("---- init\n");
+}
+void destroy(void){
+    free(p);
+    printf("---- destroy\n");
+}
+void sighandler(int sig){
+    //destroy();
+    exit(0);    
+}
+
+int main(int argc,char **argv){
+    //注册销毁函数
+    atexit(destroy);//注册,而不是调用，系统在关闭进程时调用
+    //注册接收信号的函数
+    signal(SIGABRT,sighandler);
+    //初始
+    init();
+    //exit(0);
+    //abort(); //abort通常伴随core文件产生, 如果直接exit，不会产生core文件
+    while(1) sleep(1);
+}
+        
+        
+//////////////////////////////////////////////////////////////////////////
+四、进程间通信
+    双工：双向在同一时刻的通信. 双轨车道
+    半双工：可以双向通信，不能在同一时刻 单轨车道
+    单工：只能向一个方向传送数据， 单行道
+    
+    进程通信：
+        管道: 水管，水满，不能注水(写阻塞)，没水，不能接水(读阻塞) ，水流朝一个方向流动
+        共享内存: 水池，大家都可随时放入水，也可以随时取水
+        设备映射：实现磁盘、文件、设备等种映射，映射为内存来使用。
+        消息：
+        信号：
+        
+        网络：有线和无线，两台机器之间的程序通信,TCP\UDP(socket)
+        串口：有线  
+        并口：
+        蓝牙：无线
+        zigbee: 组网，无线
+        rfid: 射频，无线
+        
+     
+     unix  管道
+     linux system IPC (消息，共享内存,信号量)
+           socket IPC (tcp、udp、icmp)
+           posix  IPC (映射)
+           
+     每一组的使用风格不同      
+        
+(一)管道
+     有三种：无名(匿名)管道、有名(命名)管道、标准流管道
+     
+     管道是半双工的，输入输出原则是先入先出(FIFO)，写入数据在管道的尾端，读取数据在管道的头部。如果要实现双向交互，必须创建两个管道。
+     读取后的数据，不在管道中。
+     如果管道内没有数据，读阻塞(函数不结束),如果有写入的，则解除阻塞。
+     如果管道写满，则写阻塞。如果有读取的，阻塞解除
+     
+              
+     无名管道:用于fork创建的父子进程中
+     有名管道:用于任意两进程之间
+     标准流管道：是将执行指令的结果写入到内存中
+     
+1.无名管道
+     操作流程：pipe->read(write)->close
+ 
+     #include <unistd.h>
+     int pipe(int filedes[2]);
+     返回：0成功 -1失败
+     参数：filedes是文件描述符，共2个，在函数内填写这个描述符
+           filedes[0]是读端描述符，filedes[1]是写端的描述符
+     
+     本质：是内核空间的内存
+     
+     父子进程中，用fork创建进程。管道的创建在fork之前
+
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+int main(int argc,char **argv){
+    int fd[2];
+    int err=pipe(fd);
+    if (err==-1) return -1;
+    int pid=fork();
+    if (pid==-1) return -1;
+    else if (pid==0){//子进程
+       close(fd[1]);
+       char buf[256];
+       while(1){
+          bzero(buf,256);
+          int size=read(fd[0],buf,256); //阻塞
+          printf("---- size=%d,buf=%s\n",size,buf);
+          if (strcmp(buf,"q")==0) break;
+       }
+       close(fd[0]);
+    }
+    else {//父进程
+       close(fd[0]); //关闭读描述符
+       char buf[256];
+       while(1){
+           scanf("%s",buf);
+           write(fd[1],buf,strlen(buf));
+           if (strcmp(buf,"q")==0) break;
+       }
+       close(fd[1]);
+       wait(pid,NULL);
+    }
+    return 0;
+}
+           
+           
+2、有名管道
+
+   操作流程：mkfifo->open->read(write)->close->unlink
+   本质，利用磁盘空间形成管道
+   文件：写入文件，文件有数据，读文件，数据不消失
+   管道：写入管道，文件有数据，读管道，数据消失
+   
+   有名,使用文件名做标识，另一个程序能找到同名文件
+    
+   int mkfifo(const char *pathname, mode_t mode);
+   参数：pathname 临时文件名
+         mode     权限
+   返回值：-1失败 0成功
+//write.c         
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <errno.h>
+#include <fcntl.h>
+int main(int argc,char **argv){
+    char *name=argv[1];
+    int err=mkfifo(name,0666);//创建文件当管道用，临时文件的目录不能在windows上
+    if (err==-1){
+        printf("---- mkfifo err=%s\n",strerror(errno));
+        return -1;
+    }
+    int fd=open(name,O_WRONLY); //打开管道 写入端用只写
+    if (fd==-1) return -1;
+
+    char buf[256];
+    while(1){
+       scanf("%s",buf);
+       write(fd,buf,strlen(buf));
+       if (strcmp(buf,"q")==0) break;
+    }
+    close(fd); //关闭管道
+    unlink(name); //删除临时文件
+    return 0;
+
+}
+
+//read.c
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <errno.h>
+#include <fcntl.h>
+int main(int argc,char **argv){
+    char *name=argv[1];
+    //读端的程序不需要创建管道，因为管道已被创建
+    int fd=open(name,O_RDONLY); //打开管道 读出端用只读
+    if (fd==-1) return -1;
+
+    char buf[256];
+    while(1){
+       bzero(buf,256);
+       int size=read(fd,buf,256);
+       printf("---- size=%d,buf=%s\n",size,buf);
+       if (strcmp(buf,"q")==0) break;
+    }
+    close(fd); //关闭管道
+    //读端不需删除临时文件,由创建者来删除
+}           
+           
+3.标准流管道
+    是标准C函数，不属于系统调用，用于读取指令执行的结果
+    操作流程: popen->fread->pclose   
+    
+    FILE *popen(const char *command, const char *type);
+    返回: 文件指针   NULL 错误
+    参数：command 字符串括起来的指令 
+          type    "r"
+
+#include <stdlib.h>
+#include <string.h>
+#include <errno.h>
+#include <fcntl.h>
+int main(int argc,char **argv){
+    FILE * fd=popen("date","r");
+    if (fd==NULL) return -1;
+    char buf[4096];
+    fread(buf,4096,1,fd);
+    pclose(fd);
+
+    printf("--- \n %s\n",buf);
+
+   return 0;
+}
+    
+(二)设备映射 
+   
+       //将物理内存映射到用户空间
+       void *mmap(void *start, size_t length, int prot, int flags,int fd, off_t offset);
+        参数 start:映射内存的起始地址 通常设为NULL
+                length：映射内存的大小
+                prot:对映射区域存储的访问权限
+                       PROT_READ  映射区可读
+                       PROT_WRITE 映射区可写
+                flags:对内存操作的控制
+                       MAP_SHARED 把映射的内存设为共享内存
+                       MAP_PRIVATE把映射的内存设为私有内存
+                fd:文件描述符,由  shm_open或open返回 
+                offset:偏移位置 通常设为0
+                       SEEK_SET 起始位置 0
+                       SEEK_CUR 当前位置 1
+                       SEEK_END 文件末尾 2
+       返回值：映射后的地址
+       //解除映射
+       int munmap(void *start, size_t length);
+       参数 start 是mmap返回值     
+            length 和mmap对应的内存长度
+
+       //创建磁盘空间，用来映射
+       int shm_open(const char *name, int oflag, mode_t mode);
+       //参数 name 文件名
+              oflag 标志 设可读可写
+              mode  权限 0666
+       //删除磁盘空间的临时文件       
+       int shm_unlink(const char *name);
+       
+       还可以使用open打开已有文件，或设备
+       
+       为什么映射已有文件？
+       比如一个avi文件2G,如果使用read来读，read过程本身就是内存的拷贝。如果进行映射，则文件直接当成内存来使用，则可以直接使用数据。
+       为什么映射设备？
+       比如，一个屏幕，2048*1024*2 内存4M，如果使用read或write，是进行一次拷贝，如果映射为内存，则直接使用数据。
+       为什么创建临时磁盘空间进行映射？
+       内存不足时，可扩展内存空间；两个进程之间共享磁盘空间。
+       
+1.进程之间共享磁盘空间
+//write.c
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <errno.h>
+#include <fcntl.h>
+#include <linux/mman.h>
+
+int main(int argc,char **argv){
+   char *filename=argv[1];
+   //int fd=shm_open(filename,O_CREAT|O_RDWR,0666);
+   int fd=open(filename,O_CREAT|O_RDWR,0666);
+   if (fd==-1){
+      printf("--- open err=%s\n",strerror(errno));
+      return -1;
+   }
+   //设置文件大小
+   int size=4096;
+   ftruncate(fd,size); //已有文件不要用，而用stat来获取大小
+   //映射
+   char* buf=(char*)mmap(NULL,size,PROT_READ |PROT_WRITE,MAP_SHARED,fd,0);
+   if (buf==NULL){
+       close(fd);
+       return -1;
+   }
+   //写入数据
+   while(1){
+      scanf("%s",buf);
+      if (strcmp(buf,"q")==0) break;
+   }
+   //解除映射
+   munmap(buf,size);
+   //关闭
+   close(fd);
+   //shm_unlink(filename);
+   return 0;
+
+}
+//read.c
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <errno.h>
+#include <fcntl.h>
+#include <linux/mman.h>
+#include <sys/stat.h>
+#include <sys/types.h>
+
+int main(int argc,char **argv){
+   char *filename=argv[1];
+   //int fd=shm_open(filename,O_RDWR,0666);
+   int fd=open(filename,O_RDWR,0666);
+   if (fd==-1){
+      printf("--- open err=%s\n",strerror(errno));
+      return -1;
+   }
+   //获取文件大小
+   struct stat st;
+   fstat(fd,&st);
+   int size=st.st_size;
+   //映射
+   char* buf=(char*)mmap(NULL,size,PROT_READ |PROT_WRITE,MAP_SHARED,fd,0);
+   if (buf==NULL){
+       close(fd);
+       return -1;
+   }
+   //打印数据
+   while(1){
+      printf("--- %s\n",buf);
+      if (strcmp(buf,"q")==0) break;
+      sleep(2);
+   }
+   //解除映射
+   munmap(buf,size);
+   //关闭
+   close(fd);
+   return 0;
+}
+
+   
+2.映射设备空间
+   fb 是缩写 framebuffer  ，帧缓冲，帧是每一个图片，1秒8-40张图
+   屏本身就是一块内存。该内存中存灯亮值,每个象素点3个灯rgb,如果3个灯的值存在2个字节中，称为16位位图。
+   
+   1）设备控制
+      读取设备设置
+fb_var_screeninfo结构
+    该结构用于读取或设置屏幕的参数，如分辨率，显示颜色数，屏幕大小等等。
+    struct fb_var_screeninfo  {
+       __u32 xres;	 //屏幕上可见的实际分辨率，横向象素点个数
+       __u32 yres;	 //屏幕上可见的实际分辨率，纵向象素点个数
+       __u32 xoffset;	 //x坐标偏移 决定在哪一列开始显示 常用在动画中
+       __u32 yoffset; 	 //y坐标偏移 决定在哪一行开始显示
+       __u32 bits_per_pixel; //每个象素点所点位数 可设置值1，2，4，8，16，24，32 
+       __u32 height;	//图象高度，单位mm
+       __u32 width;  	//图象宽度，单位mm
+       __u32 left_margin;  	//左边距
+       __u32 right_margin; 	//右边距
+       __u32 upper_margin; 	//上边距
+       __u32 lower_margin; 	//下边距
+       ......  };  
+   通过该结构，可以设置屏幕一些参数。宏指令如下：
+    #include <linux/fb.h> 
+    FBIOGET_VSCREENINFO    获取 fb_var_screeninfo信息
+    FBIOPUT_VSCREENINFO    设置 fb_var_screeninfo信息
+      
+    /dev/fb0
+   
+  2)映射
+#include <stdlib.h>
+#include <string.h>
+#include <errno.h>
+#include <fcntl.h>
+#include <linux/mman.h>
+#include <sys/stat.h>
+#include <sys/types.h>
+#include <linux/fb.h>
+#include <math.h>
+struct px_t{
+   short r:5;
+   short g:6;
+   short b:5;
+};
+int main(int argc,char **argv){
+    int fd=open("/dev/fb0",O_RDWR);
+    if (fd==-1){
+      printf("--- open err=%s\n",strerror(errno));
+      return -1;
+    }
+    struct fb_var_screeninfo info;
+    ioctl(fd,FBIOGET_VSCREENINFO,&info);
+    int w=info.xres;
+    int h=info.yres;
+    int size=w*h*2;
+
+    //映射
+    //char* buf=(char*)mmap(NULL,size,PROT_READ |PROT_WRITE,MAP_SHARED,fd,0);
+    typedef char (*PARR)[960];
+    PARR buf=(PARR)mmap(NULL,size,PROT_READ |PROT_WRITE,MAP_SHARED,fd,0);
+    if (buf==NULL){
+       close(fd);
+       return -1;
+    }
+    memset(buf,0,size); //清屏
+    //画圆
+    int r=100,x=240,y=136;
+    double i;
+    int x1,y1;
+    for(i=0;i<360;i=0.5){
+       x1=x+r*cos(i*3.14/180);
+       y1=y+r*sin(i*3.14/180);
+       //buf[y1*480*2+x1*2]=0xff;
+       //buf[y1*480*2+x1*2+1]=0xff;
+       //buf[y1][x1*2]=0;
+       //buf[y1][x1*2+1]=0x1f<<3;
+       struct px_t *p=(struct px_t*)&buf[y1][x1*2];
+       p->r=0;
+       p->g=0x3f;
+       p->b=0;
+    }
+    //解除映射
+    munmap(buf,size);
+    //关闭
+    close(fd);
+    return 0;
+}
+
+   
+(三)共享内存和信号量、消息
+    使用内核空间
+    
+1.IPC指令
+
+  格式：
+    查看IPC   ipcs [-s -m -q] -i id
+          
+    ipcs
+    ------ Shared Memory Segments --------
+key        shmid      owner      perms      bytes      nattch     status      
+0x00000000 65536      root      600        393216     2          dest         
+    
+    key 主键 用来标识ipcs组
+    shmid  编号 用来识别哪一个IPC
+    每一个IPC用来决定所共享的内存，程序之间根据主键和编号共同识别所使用的ipc
+      
+          
+          
+    删除IPC   ipcrm [ [-q msqid] [-m shmid] [-s semid]  
+   
+2.主键的生成
+
+  (1)IPC_PRIVATE 宏，由系统自动分配一个键值，用于父子进程
+  (2)ftok函数产生唯一标识
+       #include <sys/ipc.h>                         
+       key_t ftok(const char *pathname, int proj_id);
+       参数： pathname 包含路径的文件名，这个文件必须是已存在的，而且永远不
+                                   会发生变化的
+   	          proj_id:     自已定义的一个编号
+       返回值 key_t是键值类型，是根据文件名和自定义的编号运算出来的结果，是个整型只要文件名和编号不变，获取来的key就永远是同一个值  
+      
+      注意事项：所选的文件，必须是在开发板上存的。
+      
+      key_t key=ftok("/bin/ls",2);
+    
+3.共享内存
+
+    操作流程：shmget(创建)->shmat(映射)->shmdt(解除)->shmctl(释放)
+              shmget(获取)->shmat(映射)->shmdt(解除)         
+
+     #include <sys/ipc.h>
+     #include <sys/shm.h>
+     //创建内存 在内核空间中申请的内存
+     int shmget(key_t key, size_t size, int shmflg);
+     参数： key 主键
+            size 内存大小
+            shmflg 标志
+                 0         代表直接使用不需要创建
+                 IPC_CREAT 创建
+                 IPC_EXCL  如果创建时，发现内存存在，则创建失败
+            在一个程序中，一定需要创建，而另一个程序则需要获取即可
+     返回值：是共享内存id 失败 -1
+                 
+     //设置共享内存配置
+     int shmctl(int shmid, int cmd, struct shmid_ds *buf);
+     参数 shmid 是shmget返回值
+          cmd   控制指令
+                IPC_SET  设置
+                IPC_STAT 获取状态
+                IPC_RMID 删除  buf设为NULL          
+        
+          struct shmid_ds {
+               struct ipc_perm shm_perm;   
+               size_t          shm_segsz;  //内存大小
+               ...
+           };
+           
+      //内存映射
+      void *shmat(int shmid, const void *shmaddr, int shmflg);
+      参数 shmid 是shmget返回值
+           shmaddr 地址，通常设为NULL
+           shmflg   一般设为0
+                    SHM_RDONLY  这块内存只读
+                    SHM_RND     这块内存的地址向下靠拢到内存页面大小的整数倍
+      返回值：是映射后的内存地址(进程中的地址)  失败是-1     
+
+      //解除映射
+      int shmdt(const void *shmaddr);
+      参数 shmaddr  是shmat返回值     
+
+
+//write.c
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <errno.h>
+#include <sys/ipc.h>
+#include <sys/shm.h>
+
+int main(int argc,char **argv){
+    //创建key
+    key_t key=ftok("/bin/ls",7);
+    //创建共享内存
+    int shmid=shmget(key,4096*4,IPC_CREAT | IPC_EXCL);
+    if (shmid==-1){
+       printf("---- shmget err=%s\n",strerror(errno));
+       return 0;
+    }
+    //映射内存
+    char *buf=(char*)shmat(shmid,NULL,0);
+    if (buf==NULL){
+       printf("---- shmat err=%s\n",strerror(errno));
+       shmctl(shmid,IPC_RMID,NULL);
+       return -1;
+    }
+
+    while(1){
+      scanf("%s",buf);
+      if (strcmp(buf,"q")==0) break;
+    }
+
+    //解除映射
+    shmdt(buf);
+    //销毁共享内存
+    shmctl(shmid,IPC_RMID,NULL);
+
+}
+
+//read.c
+int main(int argc,char **argv){
+    //创建key
+    key_t key=ftok("/bin/ls",7);
+    //获取共享内存id
+    int shmid=shmget(key,0,0);
+    if (shmid==-1){
+       printf("---- shmget err=%s\n",strerror(errno));
+       return 0;
+    }
+    //获取内存信息
+     struct shmid_ds stat;
+    shmctl(shmid,IPC_STAT,&stat);
+    printf("-- size =%d\n",stat.shm_segsz);
+    //映射内存
+    char *buf=(char*)shmat(shmid,NULL,0);
+    if (buf==NULL){
+       printf("---- shmat err=%s\n",strerror(errno));
+       shmctl(shmid,IPC_RMID,NULL);
+       return -1;
+    }
+
+    while(1){
+       printf("--- %s\n",buf);
+       if (strcmp(buf,"q")==0) break;
+       sleep(2);
+    }
+
+    //解除映射
+    shmdt(buf);
+    //谁创建谁销毁,此处不需要销毁
+
+}
+
+4.信号量
+   用途：进行互斥和同步。
+   多个进程访问同一个共享内存，使用互斥(锁)。一个进程控制另一个进程，使用同步(唤醒)
+   
+   PV操作
+   信号量是一个变量，记录了 0和非零的数
+   P 将信号量减1，向下运行。如果信号为0时，减不了，则阻塞
+   V 将信号量加1，被阻住的P被唤醒，减1，然后向下运行
+   
+   线程：sem_init->sem_wait->sem_post->sem_destroy
+   进程：semget(创建)-> semop(P或V操作)-> semctl(销毁)
+
+   #include <sys/sem.h>
+   //创建信号量
+   int semget(key_t key, int nsems, int semflg);
+   参数 key 键值
+        nsems 信号量的个数  生成多个信号量
+        semflg 访问权限和创建
+               0
+               IPC_CREAT  创建 
+               IPC_EXCL   防止重复创建
+   返回值：信号量id  -1失败
+   
+   //控制信号量            
+   int semctl(int semid, int semnum, int cmd, ...);
+   参数 semid 是semget返回值
+        semnum 第几个信号量 从0开始 n-1个
+        cmd: 各种操作指令
+              IPC_STAT  获取信号量信息
+              SETVAL 设置信号量的值 初始值 是0 启动就加锁，初始值为 1 先执行再加锁
+              GETVAL 获取信号量的值
+              IPC_RMID   删除信号量
+   //PV操作 
+   int semop(int semid, struct sembuf *sops, unsigned nsops);
+   参数 semid 信号量id
+        sops  结构体
+           struct  sembuf{
+               short sem_num; //信号量编号,通常设为0
+               short sem_op;  //信号量操作, -1 则表p操作  1 则表示为V操作
+               short sem_flg;  //信号量操作标志，通常设为SEM_UNDO 
+                               //在没释放信号量时，系统自动释放
+           };
+           nsops:操作数组sops中的操作个数,通常为1
+    使用system v机制的信号量，没有明显的PV操作函数，操作起来不如POSIX机制方便，所以通常我们用上面的函数来实现方便的PV操作函数。
+  
+
+
+//write.c
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <errno.h>
+#include <sys/ipc.h>
+#include <sys/shm.h>
+#include <sys/sem.h>
+static int semid;
+int seminit(int sem,int semflg){
+    key_t key=ftok("/bin/ls",8); //获取键值
+    semid=semget(key,1,semflg);  //创建信号量
+    if (semid==-1){ 
+        printf("--- semget err=%s\n",strerror(errno));
+        return -1;
+    }
+    int err=semctl(semid,0,SETVAL,sem); //设置信号量的初始值
+    if (err==-1){
+       semctl(semid,0,IPC_RMID,NULL);  //销毁信号量
+    }
+    return err;
+}
+
+int semdestroy(){
+    return semctl(semid,0,IPC_RMID,NULL);  //销毁信号量
+}
+
+int semlock(){
+    struct  sembuf sem={0,-1,SEM_UNDO};   //定义结构，赋初值,0 第0个信号量  -1 P操作  
+    return semop(semid,&sem,1);  //执行信号量的操作
+}
+int semunlock(){
+    struct  sembuf sem={0,1,SEM_UNDO};    //定义结构，赋初值,0 第0个信号量  1  V操作 
+    return semop(semid,&sem,1);
+}
+
+int main(int argc,char **argv){
+    //信号量初始化
+    int err=seminit(1,IPC_CREAT | IPC_EXCL);
+    if (err==-1) return -1;
+    //创建key
+    key_t key=ftok("/bin/ls",7);
+    //创建共享内存
+    int shmid=shmget(key,4096*4,IPC_CREAT | IPC_EXCL);
+    if (shmid==-1){
+       printf("---- shmget err=%s\n",strerror(errno));
+       return 0;
+    }
+    //映射内存
+    char *buf=(char*)shmat(shmid,NULL,0);
+    if (buf==NULL){
+       printf("---- shmat err=%s\n",strerror(errno));
+       shmctl(shmid,IPC_RMID,NULL);
+       return -1;
+    }
+
+    while(1){
+      semlock();
+      scanf("%s",buf);
+      semunlock();
+      if (strcmp(buf,"q")==0) break;
+    }
+
+    //解除映射
+    shmdt(buf);
+    //销毁共享内存
+    shmctl(shmid,IPC_RMID,NULL);
+    //信号量销毁
+    semdestroy();
+
+}
+
+//read.c
+
+int main(int argc,char **argv){
+    //信号量初始化
+    int err=seminit(0,0);
+    if (err==-1) return -1;
+    //创建key
+    key_t key=ftok("/bin/ls",7);
+    //创建共享内存
+    int shmid=shmget(key,0,0);
+    if (shmid==-1){
+       printf("---- shmget err=%s\n",strerror(errno));
+       return 0;
+    }
+    //映射内存
+    char *buf=(char*)shmat(shmid,NULL,0);
+    if (buf==NULL){
+       printf("---- shmat err=%s\n",strerror(errno));
+       shmctl(shmid,IPC_RMID,NULL);
+       return -1;
+    }
+
+    while(1){
+      semlock();
+      printf("--- %s\n",buf);
+      semunlock();
+      if (strcmp(buf,"q")==0) break;
+    }
+
+    //解除映射
+    shmdt(buf);
+    //共享内存不用销毁，谁创谁销
+    //信号量不用销毁，谁创谁销
+
+}
+
+                
+5.消息队列
+   可以进行多进程之间通讯。还可以在一个程序中的多线之间通讯，在一个进程的多个.c文件之间通讯。
+   以队列方式存在，先进先出，每个消失读取之后就在队列中消失。进程与消息之间是异步通讯。
+   
+   消息存在结构体内
+   消息结构体必须自已定义，必须按系统的要求定义
+       struct msgbuf{      //名自已定义
+    	    long mtype;      //必须是long 变量名必须是mtype
+    	    char mdata[256]; //必须是char类型数组,数组名和数组长度由自已定义
+       };
+       mtype 是消息标识 大多用宏定义一组消息指令
+       mdata 是对消息的文件说明，或信息
+   
+   #define MSG_CMD_OPEN  0000001 //0x0000001
+   #define MSG_CMD_CLOSE 0000002 //0x0000002
+   #define MSG_CMD_PRINT 0000003
+   
+   用于指挥和控制另一个进程
+   
+    #include <sys/msg.h>
+
+    //创建消息
+    int msgget(key_t key, int msgflg);
+    参数：key 唯一标识 
+               msgflg 创建或权限的设置
+         	     IPC_CREAT 创建
+        	     0         代表获取已存在消息标识
+    返回值：消息标识符	ID   
+    //控制消息 
+    int msgctl(int msqid, int cmd, struct msqid_ds *buf);
+    参数：msqid 消息标识符	ID
+              cmd   指令
+     	        IPC_STAT 获取消息队列信息
+     	        IPC_SET  设置消对列的属性
+     	        IPC_RMID 删除消息(是从内核中删除) 
+    
+    //发送消息
+    int msgsnd(int msqid, const void *msgp, size_t msgsz, int msgflg);
+     参数：msqid  消息标识符	ID
+           msgp   消息结构体的指针	   
+           msgsz  消息结构体的长度
+           msgflg 标志
+     	       0 表示阻塞  常用
+     	       IPC_NOWAIT 非阻塞
+     	       MSG_NOERROR 消息长度大于msgsz时，超长部分被抛弃
+    //接收消息
+    ssize_t  msgrcv(int  msqid,  void *msgp, size_t msgsz, long msgtyp, int   msgflg);
+    参数：msgtyp 代表接收消息类型  即定义的宏 如果写入0代表接收所有消息
+    
+    
+
+//libmsg.h
+
+typedef struct msgbuf{      //名自已定义
+    long mtype;      //必须是long 变量名必须是mtype
+    char mdata[256]; //必须是char类型数组,数组名和数组长度由自已定义
+} msg_t;
+
+//回调，接收 被无限次调用
+typedef int (* msg_recv_t)(int ,char*);
+
+//准备工作 程序启动时调用(常用名 init  start  open)     
+extern int msg_init(int flg,msg_recv_t handler,int mtype);
+//善后工作 程序结束前调用(常用名 destroy stop  close)
+extern int msg_destroy();
+//发送工作 可无限次调用
+extern int msg_send(int type,char *msgstr);
+
+//libmsg.c
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <errno.h>
+#include <sys/ipc.h>
+#include <sys/msg.h>
+#include "libmsg.h"
+
+static int msgflg;
+static pthread_t msgpid;
+static int msgid;
+static int (*postmsg)(int msgtyp,char* msgstr);
+static void* msg_run(void* arg){
+   long msgtyp=*((long*)arg);
+   msg_t msg;
+   while(1){
+   	   //接收消息
+       int size=msgrcv(msgid,&msg,sizeof(msg),msgtyp,0);
+       //通过回调传入应用层
+       if (size>0 && postmsg!=NULL) postmsg(msg.mtype,msg.mdata);
+   }
+}
+
+int msg_init(int flg,int (*handler)(int ,char*),int mtype){
+    postmsg=handler;
+    msgflg=flg;
+    //获取key值
+    key_t key=ftok("/bin/ls",9);
+    //创建消息
+    msgid=msgget(key,msgflg);
+    if (msgid==-1){
+        printf("---- msgget err=%s\n",strerror(errno));
+        return -1;
+    }
+    //启动线程
+    if (handler!=NULL){//如果句柄为NULL则不创建线程
+       pthread_create(&msgpid,NULL,msg_run,&mtype);
+    }
+    return 0;
+}
+
+int msg_destroy(){
+	 //如果句柄不为空，则杀死线程
+   if (postmsg!=NULL) pthread_cancel(msgpid);
+   //如果创建消息者，则销毁消息
+   if (msgflg!=0) msgctl(msgid,IPC_RMID,NULL);
+   return 0;
+}
+
+int msg_send(int type,char *msgstr){
+   msg_t msg;
+   msg.mtype=type;
+   strcpy(msg.mdata,msgstr);
+   //发送消息
+   return msgsnd(msgid,&msg,sizeof(msg),0);
+}  	       
+  
+     	       
+//write.c
+#include "libmsg.h"
+int main(int argc,char **argv){
+   //消息初始化
+   int err= msg_init(IPC_CREAT |IPC_EXCL,NULL,0);
+   if (err==-1) return -1;
+   //发消息
+   int msg;
+   char str[256];
+   while(1){
+      scanf("%d %s",&msg,str);
+      msg_send(msg,str);
+      if (msg==0) break;
+   }
+   //消息销毁
+   msg_destroy();
+}
+
+//read.c
+#include "libmsg.h"
+int msgrecv(int type,char *str){//事件
+   switch(type){
+   case MSG_CMD_OPEN:
+        printf("----我要打开文件了\n");
+        break;
+   case MSG_CMD_CLOSE:
+        printf("----我要关闭文件了\n");
+        break;
+   case MSG_CMD_PRINT:
+        printf("----对方想让我打印数据,%d %s\n",type,str);
+        break;
+   case MSG_CMD_EXIT:
+        printf("----对方要退出，我该走了\n");
+        exit(0);
+   }
+}
+
+int main(int argc,char **argv){
+   //消息初始化
+   int err= msg_init(0,msgrecv,0);
+   if (err==-1) return -1;
+   //发消息
+   int msg;
+   char str[256];
+   while(1){
+      scanf("%d %s",&msg,str);
+      msg_send(msg,str);
+      if (msg==0) break;
+   }
+   //消息销毁
+   msg_destroy();
+}
+     
+
+(四).描述符监听
+  
+  例如：用read读管道,如果管道中没有数据，则进入阻塞，所以用线程
+        如果在阻塞状态，如果想让线程结束，则用pthread_cancel。 
+        如果在阻塞状态，如果想让线程通过变量来判断线程循环是否结束，该用什么方法？
+     
+  int state;      
+  void* run(void* arg){  	 
+  	 while(state){
+  	     read(fb,buf,256); //阻塞 再也没有可读数据时，一直阻塞，没有机会进下一次循判断条件  	     	
+  	 }
+  }    	 
+  void play(){
+  	 state=1;
+  	 pthread_create(&pid,NULL,run,NULL);
+  }
+  void stop(){
+  	 state=0;
+  }
+  
+  select可以在使用read之前，先判断设备中是否有数据可读。如果有可读数据再使用read，这样就不会出现阻塞现象
+  select用于监听设备，当设备没有可读数据时，也处于阻塞状态。但如果超过了指定的时间，还没有数据可读，则返加 0。有果在指定的时间内，有数据进入，则返回>0的数据，当设备出现问题时，则返回-1。所以使用select有机会再进入下一次循环
+  这个超时时间，也称为心跳时间 200毫秒。 60秒
+  
+  //监听描述符    
+  int select(int nfds, fd_set *readfds, fd_set *writefds, fd_set *exceptfds, struct timeval *timeout);
+  参数  nfds  要是监听的描述符+1
+        readfds 读设备描述符组
+        writefds 写描述符组
+        exceptfds 其它功能的描述符组
+        timeout   超时时间
+  返回值 -1 代表所监听设备出错  0  则代表目前设备中没有可读或可写的数据  >0 代表有可读或可写的数据
+  
+  如果想在代码只是读取数据，则只需要设置readfds，而writefds,exceptfds设为NULL
+  
+  
+  描述符组的设置
+       //将描述符组清零
+       void FD_ZERO(fd_set *set);
+       //将描述符填写到描述符组
+       void FD_SET(int fd, fd_set *set);
+       //判断指定的描述符是否在描述符组内
+       int FD_ISSET(int fd, fd_set *set);
+  超时时间设置
+       struct timeval{
+                 long  tv_sec;/*秒*/
+                 long  tv_usec;/*微妙*/
+       }; 
+       
+       struct timeval t_out;
+       t_out.tv_sec=1;
+       t_out.tv_usec=200000; 
+       超时时间为1.2秒
+       
+
+//pipe.h   
+#ifndef PIPE_H
+#define PIPE_H
+typedef int (*phandler_t)(char *buf,int size);
+//handler是回调函数 数据通过回调进UI层  中间层和UI层是同步关系
+extern int pinit(char *name,int flag,phandler_t handler);
+extern int pdestroy();
+extern int psend(char *buf,int size);
+
+#endif
+      
+//pipe.c
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <errno.h>
+#include <fcntl.h>
+#include <pthread.h>
+#include "pipe.h"
+static int pfd;
+static int pflag;
+static pthread_t pthid;
+static int state;
+static char filename[256];
+static int (*postdata)(char *buf,int size);
+static void *prun(void* arg){
+   char buf[4096];
+   fd_set rfds;
+   struct timeval t_out;
+   while(state){
+       FD_ZERO(&rfds);
+       FD_SET(pfd,&rfds);
+       t_out.tv_sec=0;
+       t_out.tv_usec=200000;
+       int err=select(pfd+1,&rfds,NULL,NULL,&t_out);
+       if (err==-1) break;
+       else if (err==0) {
+           //printf("----- out time\n");
+           continue;
+       }
+       bzero(buf,4096);
+       int size=read(pfd,buf,4096); //阻塞
+       if (size==0) exit(0);
+       if (postdata!=NULL) postdata(buf,size);
+   }
+}
+
+int pinit(char *name,int flg,phandler_t handler){
+    postdata=handler;
+    pflag=flg;
+    strcpy(filename,name);
+    if (pflag & O_WRONLY ==O_WRONLY){
+       int err=mkfifo(filename,0666);//创建文件当管道用
+       if (err==-1){
+           printf("---- mkfifo err=%s\n",strerror(errno));
+           return -1;
+       }
+    }
+    //打开文件
+    pfd=open(filename,pflag); //打开管道 写入端用只写
+    if (pfd==-1){
+       printf("---- open err=%s\n",strerror(errno));
+       return -1;
+    }
+    //启动线程
+    if (postdata!=NULL){
+       state=1;
+       pthread_create(&pthid,NULL,prun,NULL);
+    }
+    return 0;
+}
+
+int pdestroy(){
+    state=0;
+    if (postdata!=NULL){
+       pthread_join(pthid,NULL);
+    }
+    close(pfd);
+    if (pflag & O_WRONLY ==O_WRONLY) unlink(filename); //删除临时文件
+    return 0;
+}
+
+int psend(char *buf,int size){
+   return write(pfd,buf,size);
+}
+
+//write.c
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <errno.h>
+#include <fcntl.h>
+#include "pipe.h"
+int main(int argc,char **argv){
+    int err=pinit(argv[1],O_WRONLY,NULL);
+    if (err==-1) return -1;
+    char buf[256];
+    while(1){
+       scanf("%s",buf);
+       psend(buf,strlen(buf));
+       if (strcmp(buf,"q")==0) break;
+    }
+    pdestroy();
+}
+
+//read.c
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <errno.h>
+#include <fcntl.h>
+#include "pipe.h"
+int recvdata(char *buf,int size){
+    printf("----size=%d buf=%s\n",size,buf);
+    if (strcmp(buf,"q")==0) exit(0);
+}
+void exitfun(void){
+    pdestroy();
+}
+int main(int argc,char **argv){
+    atexit(exitfun);
+    int err=pinit(argv[1],O_RDONLY,recvdata);
+    if (err==-1) return -1;
+    char buf[256];
+    while(1) {
+       scanf("%s",buf);
+       if (strcmp(buf,"q")==0) exit(0);
+    }
+}
+       
+ select的作用，可以形成心跳机制，对设备进行侦听。使用回调机制实现将数据传送到应用层
+ 
+                               
+
+(五)信号
+
+1.信号相关指令
+    //查看所有信号
+    kill -l   
+    //发送信号
+    kill [-s sigspec | -n signum ] pid 
+    
+    大多情况发送信号需要指定给哪一个进程发送。前台和后台进程都可以接收信号。一个程序接收到信号后，默认关闭程序。
+    
+ 1) SIGHUP       2) SIGINT       3) SIGQUIT      4) SIGILL
+ 5) SIGTRAP      6) SIGABRT      7) SIGBUS       8) SIGFPE
+ 9) SIGKILL     10) SIGUSR1     11) SIGSEGV     12) SIGUSR2
+13) SIGPIPE     14) SIGALRM     15) SIGTERM     16) SIGSTKFLT
+17) SIGCHLD     18) SIGCONT     19) SIGSTOP     20) SIGTSTP
+21) SIGTTIN     22) SIGTTOU     23) SIGURG      24) SIGXCPU
+25) SIGXFSZ     26) SIGVTALRM   27) SIGPROF     28) SIGWINCH
+29) SIGIO       30) SIGPWR      31) SIGSYS 
+
+   SIGKILL 信号  9 是信号的值  强制杀死 是唯一不可拦截的信号 
+   SIGABRT       6             异常信号 可拦截后按自已意图来处理代码， 默认处理是杀死
+   
+   kill 15086      默认发9号信号
+   kill -n 1 15363 指定发送6号信号
+     
+2).信号说明
+    1) SIGHUP  用户终端连接结束时发出, 通常是在终端的控制进程结束时，默认终止进程
+    2) SIGINT  用户键入INTR字符(通常是Ctrl-C)时发出，用于通知前台进程组终止进程。
+    3) SIGQUIT 用户键入QUIT字符(通常是Ctrl-/)来控制. 类似于一个程序错误信号。
+    4) SIGILL  执行了非法指令. 通常是因为可执行文件本身出现错误, 或者试图执行数据段. 堆栈溢出时也有可能产生这个信号
+    5) SIGTRAP 由断点指令或其它trap指令产生
+    6) SIGABRT 调用abort函数生成的信号。
+    7) SIGBUS  非法地址, 包括内存地址对齐(alignment)出错。比如访问一个四个字长的整数, 但其地址不是4的倍数。
+    8) SIGFPE  在发生致命的算术运算错误时发出. 不仅包括浮点运算错误, 还包括溢出及除数为0等其它所有的算术的错误。
+    9) SIGKILL 用来立即结束程序的运行. 本信号不能被阻塞、处理和忽略。强行杀死进程
+    10) SIGUSR1 留给用户使用
+    11) SIGSEGV 试图访问未分配给自己的内存, 或试图往没有写权限的内存地址写数据.
+    12) SIGUSR2 留给用户使用
+   13) SIGPIPE 管道破裂。这个信号通常在进程间通信产生，比如采用FIFO(管道)通信的两个进程，读管道没打开或者意外终止就往管道写，写进程会收到SIGPIPE信号。此外用Socket通信的两个进程，写进程在写Socket的时候，读进程已经终止。
+    14) SIGALRM 时钟定时信号, 计算的是实际的时间或时钟时间. alarm函数使用该信号.
+    15) SIGTERM 程序结束(terminate)信号, 与SIGKILL不同的是该信号可以被阻塞和处理。
+    17) SIGCHLD 子进程结束时, 父进程会收到这个信号。
+    18) SIGCONT 让一个停止(stopped)的进程继续执行. 本信号不能被阻塞. 可以用一个handler来让程序在由stopped状态变为继续执行时完成特定的工作. 
+    19) SIGSTOP 停止(stopped)进程的执行. 该进程还未结束, 只是暂停执行. 本信号不能被阻塞, 处理或忽略.
+    20) SIGTSTP 停止进程的运行, 但该信号可以被处理和忽略. 用户键入SUSP字符时(通常是Ctrl-Z)发出这个信号
+    21) SIGTTIN 当后台作业要从用户终端读数据时, 该作业中的所有进程会收到SIGTTIN信号
+    22) SIGTTOU 但在写终端(或修改终端模式)时收到.
+    23) SIGURG  有"紧急"数据或out-of-band数据到达socket时产生.
+    24) SIGXCPU 超过CPU时间资源限制. 这个限制可以由getrlimit/setrlimit来读取/改变。
+    25) SIGXFSZ 当进程企图扩大文件以至于超过文件大小资源限制。
+    26) SIGVTALRM 虚拟时钟信号. 类似于SIGALRM, 但是计算的是该进程占用的CPU时间.
+    27) SIGPROF   类似于SIGALRM/SIGVTALRM, 但包括该进程用的CPU时间以及系统调用的时间.
+    28) SIGWINCH  窗口大小改变时发出.
+    29) SIGIO    文件描述符准备就绪, 可以开始进行输入/输出操作.
+    30) SIGPWR  暂停失败
+    31) SIGSYS  非法的系统调用。
+
+3)信号由谁来发送的?
+    信号的产生方式：****
+    (1)程序执行错误,如除零  内存越界，内核发送信号给程序
+    (2)由另一个进程(信号函数)发送过来的信号   
+    (3)由用户控制中断产生信号,Ctrl+C 终止程序信号
+    (4)子进程结束时向父进程发送信号  SIGCHLD 信号
+    (5)程序中设定的定时器产生信号 SIGALRM 信号
+
+2. 处理信号
+    大多信号都可以被忽略，但SIGSILL和SIGSTOP不能被忽略。
+
+1).Signal函数
+    #include <signal.h>
+    //信号捕捉
+    typedef void (*sighandler_t)(int);  //函数指针类型 参数是信号
+    sighandler_t signal(int signum, sighandler_t handler); //非阻塞
+    参数：signum 要捕捉的信号
+               handler 是用于处理信号的函数，该参数还可以如下选择
+                    SIG_DFN  采用缺省方式处理信号
+                    SIG_IGN  忽略信号
+    返回值是函数的指针,原来的信号处理函数指针
+    
+    signal用于注册一个函数，当信号触发时，则(CPU)调用这个被注册的函数，这个函数内用于处理要执行的代码。
+    
+    回想：atexit 注册进程终止时调用函数
+          pthread_create 注册线程运行的函数
+          signal 注册信号处理函数
+
+#include <stdio.h>
+#include <stdlib.h>
+#include <sys/signal.h>
+char *buf;
+void signal_deal(int signum){
+     printf("我拦截了 %d 信号\n",signum);
+     exit(0);
+}
+void destroy(void){
+    printf("------ free\n");
+    free(buf);
+}
+int main(int argc,char**argv ){
+    atexit(destroy);
+    //signal(SIGABRT,SIG_IGN); //忽略信号，不处理了
+    //signal(SIGABRT,SIG_DFL); //默认处理方式 关闭程序
+    signal(SIGABRT,signal_deal); //指定处理函数 调用abort函数触发
+    signal(SIGINT,signal_deal); //指定处理函数  ctrl+c
+    signal(SIGQUIT,signal_deal); //指定处理函数 ctrl+\
+    
+    buf=(char*)malloc(256);
+    int i=0;
+    while(i++ <20) {
+       if (i==15) exit(0);
+       sleep(1);
+    }
+}
+  如果上面代码，不使用atexit和signal，则调用exit或调用abort或使用ctrl+c或使用ctrl+\关闭程序，则无法释放内存buf
+  
+
+2).其它信号捕捉函数（了解）
+    int sigaction(int signum, const struct sigaction *act, struct sigaction   *oldact);
+    signum：信号
+    act: struct sigaction指针，包含的成员
+     	     sa_sigaction  指定要处理的函数
+     	     sa_flags      指定处理的信号方式
+     	     sa_mask       阻塞信号集
+    1)信号处理函数执行中，信号被阻塞,直到函数执行完	
+    2)通过sigaction捕捉信号，如果没有设置sa_mask阻塞信号集，则执行处理函数时被阻塞 
+    3)通过sigprocmask函数设置 sa_mask的数据，用来指定某个进入被阻塞
+  
+3. 发送信号
+  1).kill 和raise函数
+    //向指定的进程发送信号  用来控制其它进程
+    int kill(pid_t pid,int signo);
+    参数：pid 进程ID号 
+             0  把信号发送给进程组内所有进程 群发
+             >0 指定的进程，组内和组外所有进程的某一个进程          
+             < 0 把信号发送到进程组pid的绝对值进程 发送到组内某一进程
+          signo 信号值
+
+    //把信号发送到当前的进程 在.a或其它.c中控制另一个.c 
+    int raise(int sig);
+    参数：sig 信号值
+    
+    
+    
+#include <sys/signal.h>
+void signal_deal(int signum){
+     printf("我拦截了 %d 信号\n",signum);
+}
+
+int main(int argc,char**argv ){
+    signal(SIGQUIT,signal_deal); //指定处理函数
+    int i=0;
+    while(i++ <20) {
+       if (i==15) raise(3);
+       sleep(1);
+    }
+}
+
+   信号可以实现事件机制
+//pipe.h   
+#ifndef PIPE_H
+#define PIPE_H
+//handler 传入是的信号处理函数 在信号处理函数中，主动的调用precv来读取数据  信号和UI层是异步关系
+extern int pinit(char *name,int flag,void(* handler)(int));
+extern int pdestroy();
+extern int psend(char *buf,int size);
+//增加了读取数据函数
+extern int precv(char *buf,int size);
+
+#endif
+   
+//pipe.c
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <errno.h>
+#include <fcntl.h>
+#include <pthread.h>
+#include <sys/signal.h>
+#include "pipe.h"
+static int pfd;
+static int pflag;
+static pthread_t pthid;
+static int state;
+static char filename[256];
+
+static void *prun(void* arg){
+   char buf[4096];
+   fd_set rfds;
+   struct timeval t_out;
+   while(state){
+       FD_ZERO(&rfds);
+       FD_SET(pfd,&rfds);
+       t_out.tv_sec=0;
+       t_out.tv_usec=200000;
+       int err=select(pfd+1,&rfds,NULL,NULL,&t_out);
+       if (err==-1) break;
+       else if (err==0) {
+           //printf("----- out time\n");
+           continue;
+       }
+       //判断有数据进入，然后发送信号  信号处理函数，由CPU独立来执行 
+       raise(SIGUSR1);
+   }
+}
+
+int pinit(char *name,int flg,void (*handler)(int)){
+    if(handler!=NULL) signal(SIGUSR1,handler);//注册了信号处理函数
+    pflag=flg;
+    strcpy(filename,name);
+    if (pflag & O_WRONLY ==O_WRONLY){
+       int err=mkfifo(filename,0666);//创建文件当管道用
+       if (err==-1){
+           printf("---- mkfifo err=%s\n",strerror(errno));
+           return -1;
+       }
+    }
+    //打开文件
+    pfd=open(filename,pflag); //打开管道 写入端用只写
+    if (pfd==-1){
+       printf("---- open err=%s\n",strerror(errno));
+       return -1;
+    }
+    //启动线程
+    if (handler!=NULL){
+       state=1;
+       pthread_create(&pthid,NULL,prun,NULL);
+    }
+    return 0;
+}
+
+int pdestroy(){
+    state=0;
+    if (pthid!=0){
+       pthread_join(pthid,NULL);
+    }
+    close(pfd);
+    if (pflag & O_WRONLY ==O_WRONLY) unlink(filename); //删除临时文件
+    return 0;
+}
+
+int psend(char *buf,int size){
+   return write(pfd,buf,size);
+}
+int precv(char *buf,int size){
+   return read(pfd,buf,size);
+}
+~                                                                                                                                                                                                                                       //write.c
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <errno.h>
+#include <fcntl.h>
+#include "pipe.h"
+int main(int argc,char **argv){
+    int err=pinit(argv[1],O_WRONLY,NULL);
+    if (err==-1) return -1;
+    char buf[256];
+    while(1){
+       scanf("%s",buf);
+       psend(buf,strlen(buf));
+       if (strcmp(buf,"q")==0) break;
+    }
+    pdestroy();
+}
+~ 
+
+//read.c
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <errno.h>
+#include <fcntl.h>
+#include <sys/signal.h>
+#include "pipe.h"
+//read.c
+
+void sigdeal(int signum){ //信号处理函数  事件
+    char buf[256];
+    switch(signum){
+    case SIGUSR1:{
+        int size= precv(buf,256); //主动在设备读取数据
+        printf("---- size=%d buf=%s\n",size,buf);
+        if (size==0) exit(0);
+        }
+    }
+}
+void exitfun(void){
+    pdestroy();
+}
+int main(int argc,char **argv){
+    atexit(exitfun);
+    int err=pinit(argv[1],O_RDONLY,sigdeal);
+    if (err==-1) return -1;
+    char buf[256];
+    while(1) {
+       scanf("%s",buf);
+       if (strcmp(buf,"q")==0) exit(0);
+    }
+}
+
+select的作用，可以形成心跳机制，对设备进行侦听。使用信号实现事件机制，应用层去读取设备中的数据。
+
+
+2).alarm 和pause、abort函数 
+    #include <unistd.h>
+    //暂停 CPU挂起
+    int pause(void);    		
+    只要进程获得任何一个信号，暂停都会结束
+    
+void bealfun(int signum){
+    printf("----- sig %d\n",signum);
+}
+int main(int argc,char**argv ){
+    signal(10,bealfun);
+    printf("----- pause\n");
+    pause();
+    int i=0;
+    while(1){
+       printf("----- %d\n",i++);
+       sleep(1);
+    }
+}
+
+    
+       
+    //时钟计时器 用于计算时间  ****
+    unsigned int alarm(unsigned int seconds);
+    参数： seconds 时间(秒) 通过设置参数倒时，当时间到达时发出SIGALRM信号
+    设置时间后，开始倒计时，倒计时为0，则发送时钟信号
+    
+    定时器：设置时间后，在到达时间时调用指定的函数，可执行一次，可间隔指定时间来执行函数
+小例子
+#include <sys/signal.h>
+void bealfun(int signum){ //信号处理
+    alarm(1); //循环发送信号
+    printf("---- 1\n");
+}
+
+int main(int argc,char**argv ){
+    signal(SIGALRM,bealfun); //不阻塞
+    alarm(1);
+    while(1) sleep(1);
+}
+
+
+企业应用 
+#include <stdio.h>
+#include <stdlib.h>
+#include <sys/signal.h>
+int sem;
+int state;
+void (*timer_event)(void);
+void bealfun(int signum){ //信号处理
+    if (state==1) alarm(sem); //循环发送信号
+    timer_event(); //回调
+}
+int timer_init(int s,void (*event)(void)){
+    timer_event=event;
+    sem=s;
+    signal(SIGALRM,bealfun); //不阻塞
+}
+int timer_start(){
+    state=1;
+    alarm(sem);//2秒后发送信号 不阻塞 
+}
+int timer_stop(){
+    state=0;
+}
+
+
+///////////////////////////////////////
+void timer(void){
+     printf("---- 1\n");
+}
+
+int main(int argc,char**argv ){
+    timer_init(1,timer);
+    timer_start();
+    int i=0;
+    while(1) sleep(1);
+}
+    
+   
+   
+
+///////////////////////////////////////////////////////////////////////
+网络编程
+    tcp udp tcmp http协议 是网络传输数据的规范
+    
+    网络种类：物联网
+        wifi、蓝牙、光纤  使用socket协议
+        串口、CAN         使用设备读写
+        zigbee            目前在企业没有应用，只在学校进行研究阶段，接口没有统一标准
+        rfid              没有统一标准，市场有产品   
+        
+    学习方法：研究自已的通讯协议，实现网络数据收发流程 ***
+    
+一、基本概念    
+   1.类别 
+      按地理范围分：局域网、域域网、广域网     
+         
+   2.网络通信协议的种类：
+        OSI协议:     开放式系统互联模型 电话电报
+        NetBEUI协议：是netbois增强用护接口  window NT操作系统
+        IPX/SPX协议：互联网络数据包交换协议 Novell,NewWare操作系统	  	
+        TCP/IP协议： 传输控制协议/因特网互联协议，由美国国防部开发的工业标准
+    
+   3.协议栈分层结构 ***面试重点
+       用户空间   应用
+       内核空间   系统调用接口
+                  协议无关接口
+                  网络协议 
+                  驱动无关接口
+                  设备驱动
+       物理设备   硬件设备
+   
+                      
+   4.TCP/IP分层模型 ***面试重点
+       应用层    :处理特定的应用程序
+       传输层    :TCP UDP
+       网际互联层:IP层 ICMP  完成路由互联
+       网络接口层:网卡识别和数据传输
+            
+   5.国际标准:      ** 了解
+     1)标准
+       ISO      TCP
+       应用层             传递对象：报文(传输的数据)
+       表示层   应用层
+       会话层             FTP TFTP SMTP HTTP  都是应用程序，也是接口协议，都是使用TCP协议实现
+      --------------------------------------------------------------
+       运输层   传输层    TCP安全协议，用于传数据    UDP不安全协议，用于聊天
+       网络层   网际网层  IP协议 ICMP协议(ping就是ICMP)  
+                          ARP/RAPR 
+       链路层   网络接口  帧  
+       物理层   硬件      以太网、令牌环网、FDDI等网络
+     
+     2)协议簇cu
+       应用层   FTP TFTP SMTP HTTP
+       传输层   TCP 传输控制协议，是面向连接(即在收发数据之前，必须先连接好网络，保证数据安全到达)
+                UDP 数据报协议，面向无连接(即网络连接在收或发时现连接，无法保证数据是否安全到达)
+       网际层
+                IP协议    IPV4 IPV6
+                ICMP 网际控制消息协议 处理路由和主机之间错误和控制
+                ARP  地址解析协议 用于将ip映射至网卡物理地址
+                RARP 返向解析协议 将物理地址映射到ip
+                
+   6.网络地址 ***面试或笔试重点
+       A类IP地址
+           由1个字节的网络地址和3个字节的主机地址组成
+           网络地址的最高位必须是0
+           1.0.0.1-126.255.255.254
+           
+           01111111 网络地址最位为0  最高位不可以是127，有特殊用途
+           主机地址最后一个字节，不可以是255，255有特殊用途
+       
+       B类IP地址
+           由2个字节的网络地址和2个字节的主机地址组成 
+           网络地址的最高位必须是10
+           10111111 网络地址最高位为10 
+           128.0.0.1-191.255.255.254
+     
+       C类IP地址
+           由3个字节的网络地址和1个字节的主机地址组成 
+           网络地址的最高位必须是110
+           192.0.0.1-223.255.255.254
+
+       D类IP地址
+           D类IP地址第一个字节以“1110”开始  
+           224.0.0.1-239.255.255.254
+           用于实现多点广播
+           
+       E类IP地址
+           E类IP地址第一个字节以“1111”开始
+           240.0.0.1-255.255.255.254
+           仅作实验和开发用
+           
+           0.0.0.0 代表任意地址
+           255.255.255.255 代表广播地址
+             
+   7.ip和端口
+       ip用于唯一识别机器
+       port用于唯一识别程序
+       
+       端口2字节 
+       公认端口：被一些公认的程序紧密绑定
+       注册端口：和程序临时绑定
+       动态端口：动态分配的端口 
+                 
+   8.套接字
+       套接字是网络编程的接口
+       流套接字:  SOCK_STREAM
+           即TCP 该服务将保证数据能够实现无差错、无重复发送，并按顺序接收
+       数据报套接字：SOCK_DGRAM
+           即UDP 该服务并不能保证数据传输的可靠性，数据有可能在传输过程中丢失或出现数据重复，且无法保证顺序地接收到数据
+       原始套接字: SOCK_RAW
+           即ICMP 没有处理的IP数据包 用于实别网络错误、控制 ping
+           
+   9.其它概念
+      字节序: 网络的固定存储顺序，ip和端口号必须是字节序
+              其它数据本身就是字节型，所以不用考虑顺序，顺序不变
+      连接方式:
+              长连接: 客户端只要和服务器连接后，一直保持连接，直到客户端程序关闭时才断开联接。
+              短连接: 每次发送数据前建立连接，发送后立即断开连接
+      传输方式:
+              同步和异步
+              如回调接收数据，是同步
+              如用消息或信号通知可读数据,在消息或信号的处理函数中读取数据，是异步
+                    
+                  
+二、UDP
+    1.数据报结构
+     
+    2.UDP操作流程
+      伪操作(流程图)
+        服务端：socket(创建)->bind(绑定)->[ recvfrom->干活->sendto ]->close
+        客户端：socket   也可以绑定     ->[ sendto->recvfrom->干活 ]->close  
+        服务的作用，客户端请求服务做某些事件，服务端按客户端请求完成工作。 
+      
+      绑定的用途：
+        绑定ip地址和端口   两个结合在一起，是程序的唯一识别，同时将这两个数据记录在协议头
+        绑定后，如果另一个其它程序也使用了同一个ip和port，则另一个程序则会失败。
+        如果没绑定，则这个ip和port被其它程序占用，则自已程序无法使用
+        
+            
+    3.函数
+       #include <sys/socket.h>
+       //创建socket
+       int socket(int  domain,  int  type,  int  protocol);
+       参数 domain ：代表协议簇
+                   AF_INET 当前使用的
+                   PF_INET  
+            type 套接字类型
+                   SOCK_STREAM 流式套接字 tcp
+                   SOCK_DGRAM  数据报     udp
+                   SOCK_RAM    原始套接字 icmp   
+            protocol:	  协议类型 指明当前协义簇内具体的协议类型
+      	           0   符合协议簇和套接字类型的默认协议  通常设为0
+      	           IPPROTO_TCP  
+      	           IPPROTO_UDP
+                   IPPROTO_ICMP
+       返回值：成功，描述符  失败 -1
+      
+       //绑定
+       int bind(int sockfd,struct sockaddr *addr,size_t addrlen);
+       参数：sockfd是socket返回的描述符	 
+             addr  指向套字地址结构的指针 存ip和端口
+             addrlen:结构体长度
+       返回值：0 成功，-1 失败
+
+       a.struct sockaddr结构 
+         struct sockaddr{   
+               short sa_family; //指定的地址簇，地址簇和协议簇相同，AF_INET
+               char  sa_data[14]; //IP地址，端口号
+         };     
+         地址只占用4字节  端口占2字节
+         
+         一般不使用这个结构，常用如下结构替代
+         struct sockaddr_in{
+               short sin_family; //指定的地址簇，地址簇和协议簇相同，AF_INET
+               short sin_port;  //端口号
+               struct in_addr sin_addr; //IP地址
+               char sin_zero[8];      	    	
+         };
+         struct in_addr{ 
+               unsigned long s_addr;     
+         };
+
+     b.端口号sin_port
+          0 代表由系统自动随机分配端口号。
+          其它值 为用户指定的端口号
+          注：客户端可以设置为0，服务器端不能设为0。 在服务端一般指定端口号 ushort 0-65535
+
+     c.IP地址sin_addr
+        INADDR_ANY 代表可以由系统将本机上所有的IP进行绑定大多用于服务器端
+        其它值 为用户端指定要绑定的IP
+            
+       
+     d.在这一部分，会常用到如下函数：
+      //将主机端口号转换为网络字节序端口
+      uini16_t htons(uini16_t hostshort);
+      hostshort: 端口号
+      返回值：网络字节序端口号值   
+      //将网络字节序端口号转换为主机端口
+      uini16_t ntohs(uini16_t netshort);
+      netshort:网络字节序
+      返回值：主机端口号	
+      //将.格式的IP地址转换为网络字节序
+      in_addr_t inet_addr(char *cp);
+      cp:即IP地址 "192.168.1.1"
+      返回值：网络字节序
+      //将网络字节序转换为.格式IP
+      char *inet_ntoa(struct in_addr in);
+      in:网络字结序
+      返回值：.格式IP地址	
+
+    //数据报收发
+    ssize_t sendto  (int s, void *buf, size_t len, int flags, struct sockaddr *to, socklen_t tolen);
+    ssize_t recvfrom(int s, void *buf, size_t len, int flags, struct sockaddr *from, socklen_t *fromlen);
+     参数：s  套接字描述符 socket返回值
+           buf:内存地址  sendto 要发送数据的内存地址   recvfrom 要接收数据的内存地址
+           len:要接收或发送数据的长度
+           flags:标志位
+     	          0 阻塞模式 通常用阻塞模式，用线程
+     	          MSG_DONOTWAIT 本次收发数据不使用阻塞模式样
+           to： 目标地址结构指针 填对方机器的ip和端口
+           from:源地址结构指针	 用来获取对方机器的ip和端口
+           tolen和fromlen是代表长度
+    返回值：代表实际已收发的数据长度       
+
+//libudp.h
+#ifndef LIBUDP_H
+#define LIBUDP_H
+typedef struct UDPDEV{
+   int (*start)(char *srcip,short srcport,void(*sighandler)(int));
+   int (*stop)();
+   int (*set)(char *dstip,short dstport);
+   int (*send)(char *buf,int size);
+   int (*recv)(char *buf,int size);
+} udp_t;
+
+extern udp_t udpdev;
+
+#endif
+
+//libudp.c
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <errno.h>
+#include <sys/signal.h>
+#include <sys/socket.h>
+#include <netinet/in.h>
+#include "libudp.h"
+int udp_fd;
+struct sockaddr_in toaddr;
+int udp_state;
+pthread_t udp_pid;
+void* udp_pthread(void*arg){
+   fd_set rfds;
+   struct timeval t_out;
+   while(udp_state){
+       FD_ZERO(&rfds);
+       FD_SET(udp_fd,&rfds);
+       t_out.tv_sec=0;
+       t_out.tv_usec=200000;
+       int err=select(udp_fd+1,&rfds,NULL,NULL,&t_out);
+       if (err==-1) break;
+       else if (err==0) continue;
+       //发送信号，通知UI调用recv
+       raise(SIGUSR1);
+   }
+   udp_state=0;
+   close(udp_fd);
+}
+
+int udp_start(char *srcip,short srcport,void(*sighandler)(int)){
+    if (udp_state==1) return -1;
+    //注册信号处理函数
+    signal(SIGUSR1,sighandler);
+    //创建socket
+    udp_fd=socket(AF_INET,SOCK_DGRAM,0);
+    if (udp_fd==-1) goto SOCKERR;
+    //绑定
+    struct sockaddr_in selfaddr;
+    selfaddr.sin_family=AF_INET;
+    selfaddr.sin_port=htons(srcport);//网络字节序
+    selfaddr.sin_addr.s_addr=inet_addr(srcip);//网络字节序
+    int err=bind(udp_fd,(struct sockaddr*)&selfaddr,sizeof(struct sockaddr));
+    if (err==-1) goto BINDERR;
+    //创建线程
+    udp_state=1;
+    pthread_create(&udp_pid,NULL,udp_pthread,NULL);
+
+    return 0;
+BINDERR:
+    close(udp_fd);
+SOCKERR:
+    printf("---- err=%s\n",strerror(errno));
+    return -1;
+}
+int udp_stop(){
+   if (udp_state==0) return -1;
+   udp_state=0;
+   pthread_join(udp_pid,NULL);
+   close(udp_fd);
+   return 0;
+}
+
+int udp_set(char *dstip,short dstport){
+   if (udp_state==0) return -1;
+   toaddr.sin_family=AF_INET;
+   toaddr.sin_port=htons(dstport);//网络字节序
+   toaddr.sin_addr.s_addr=inet_addr(dstip);//网络字节序
+}
+
+int udp_send(char *buf,int size){
+   if (udp_state==0) return -1;
+   return sendto(udp_fd,buf,size,0,(struct sockaddr*)&toaddr,sizeof(toaddr));
+}
+
+int udp_recv(char *buf,int size){
+   if (udp_state==0) return -1;
+   struct sockaddr fromaddr;
+   int len;
+   size=recvfrom(udp_fd,buf,size,0,&fromaddr,&len);
+   return size;
+}
+
+udp_t udpdev={
+   udp_start,
+   udp_stop,
+   udp_set,
+   udp_send,
+   udp_recv
+};
+
+
+//test.c
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include "libudp.h"
+
+void sigdeal(int sig){
+    char buf[4096]={0};
+    int size=udpdev.recv(buf,4096);
+    printf("--- size=%d,buf=%s\n",size,buf);
+}
+
+int main(int argc,char **argv){
+    int err= udpdev.start(argv[1],atoi(argv[2]),sigdeal);
+    if (err==-1) return -1;
+    char buf[256];
+    while(1){
+       scanf("%s",buf);
+       if (strcmp(buf,"a")==0){
+          int port;
+          scanf("%s %d",buf,&port);
+          udpdev.set(buf,port);
+       }
+       else if (strcmp(buf,"q")==0) break;
+       else
+          udpdev.send(buf,strlen(buf));
+    }
+    udpdev.stop();
+}
+
+三、TCP
+    1.数据报结构
+      
+    2.TCP连接与终止过程 ***面试重点
+      是客户端连接服务端时，自动进行了三次握手，关闭时，自动实现了四次挥手
+      
+      
+      A服务器                        B客户端
+      连接   <-----------------------
+             ------------------------>
+             <-----------------------
+     
+      关闭时 <-----------------------
+             ------------------------>
+             ------------------------>
+             <------------------------
+      
+    3.操作流程
+        服务端：socket(创建)->bind(绑定)->listen(侦听)->[accept(等待连接)->[recv->干活->send ]]->close
+        客户端：socket   也可以绑定                    ->connect()->[send->recv->干活 ]->close  
+        TCP是面向连接，在收发数据前必须先将网络连好。保证数据准备到达、按顺序接收。
+        
+        
+    //启动侦(监)听
+    int listen(int sockfd, int backlog);
+    参数：sockfd: 服务端套接字描述符
+          backlog: 指定排队等待接受连接的最大值 系统最大值SOMAXCONN
+    返回值：0成功 -1失败
+    
+    //接受连接请求 阻塞
+    int accept(int sockfd,struct sockaddr *addr, size_t *addrlen); 
+    参数：sockfd: 服务端套接字描述符	
+          addr:  获取过来的客户的地址信息   
+          addrlen:获取过来的客户的地址信息长度
+    返回值：成功 返回的是与客户端进行通信用的套接字描述符  失败-1		
+        必须是循环等待接受连接请求.
+        在收发数据时，都使用客户端描述
+        
+    //连接服务器
+    int  connect(int  sockfd,  const  struct sockaddr *serv_addr, socklen_t  addrlen);
+    参数：sockfd:客户端套接字描述符
+          serv_addr:客户端填写的要连接的服务器的地址	
+          addrlen : 地址信息长度
+    //数据收发  
+    ssize_t recv(int s, void *buf, size_t len, int flags);
+    ssize_t send(int s, const void *buf, size_t len, int flags);
+     参数：s: 套接字描述符
+    	    服务端：是accept返回值
+    	    客户端: 是socket返回值
+                buf:内存地址 	 
+                len:数据长度
+                flags 标志位 
+                   0 阻塞  通常用阻塞模式
+                   MSG_DONTWAIT 非阻塞
+
+服务端
+//libsev.h
+#ifndef LIBSEV_H
+#define LIBSEV_H
+typedef struct SEVDEV{
+   int (*start)(int sevport,int (*handler)(int fd,char *buf,int size));
+   int (*stop)();
+   int (*send)(int fd,char* buf,int size);
+} sev_t;
+extern sev_t sevdev;
+#endif
+
+//libsev.c
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <errno.h>
+#include <pthread.h>
+#include <sys/socket.h>
+#include <netinet/in.h>
+#include "libsev.h"
+#define RECVSIZE 4096
+int (*sev_recv)(int fd,char *buf,int size);
+int sev_fd;
+pthread_t accept_pid;
+int sev_state;
+void* recv_pthread(void* arg){
+   int fd=*(int*)arg;
+   printf("----recv start fd=%d  pid=%d\n",fd,pthread_self());
+   char *buf=(char*)malloc(RECVSIZE);
+   fd_set rfds;
+   struct timeval t_out;
+   while(sev_state){
+       FD_ZERO(&rfds);
+       FD_SET(fd,&rfds);
+       t_out.tv_sec=0;
+       t_out.tv_usec=200000;
+       int err=select(fd+1,&rfds,NULL,NULL,&t_out);
+       if (err==-1) break;  //设备出现问题
+       else if (err==0) continue; //超时
+       //接收数据
+       int size=recv(fd,buf,RECVSIZE,0);
+       if (size<=0) break; //网络断开
+       //将数据发送到UI
+       sev_recv(fd,buf,size);
+    }
+    //释放内存
+    free(buf);
+    //关闭客户端描述符
+    close(fd);
+    printf("----recv stop fd=%d\n",fd);
+}
+void* accept_pthread(void*arg){
+    while(1){
+       struct sockaddr_in cliaddr;
+       int clilen;
+       int cli_fd=accept(sev_fd,(struct sockaddr*)&cliaddr,&clilen);
+       if (cli_fd==-1) continue;
+       //-----------------------
+       pthread_t pid;
+       pthread_create(&pid,NULL,recv_pthread,&cli_fd);
+    }
+}
+int sev_start(int sevport,int (*handler)(int fd,char *buf,int size)){
+    if (sev_state==1) return -1;
+    sev_recv=handler;
+    //创建套接字
+    sev_fd=socket(AF_INET,SOCK_STREAM,0);
+    if (sev_fd==-1) goto SOCKERR;
+    //绑定
+    struct sockaddr_in sevaddr;
+    sevaddr.sin_family=AF_INET;
+    sevaddr.sin_port=htons(sevport);
+    sevaddr.sin_addr.s_addr=INADDR_ANY;
+    int err=bind(sev_fd,(struct sockaddr*)&sevaddr,sizeof(sevaddr));
+    if (err==-1) goto BINDERR;
+    //启动侦听
+    err=listen(sev_fd,SOMAXCONN);
+    if (err==-1) goto BINDERR;
+    //启动等待连接线程
+    sev_state=1;
+    pthread_create(&accept_pid,NULL,accept_pthread,NULL);
+    return 0;
+BINDERR:
+    close(sev_fd);
+SOCKERR:
+    printf("----- err=%s\n",strerror(errno));
+    return -1;
+}
+int sev_stop(){
+    if (sev_state==0) return -1;
+    //关闭所有的客户端线程
+    sev_state=0;
+    usleep(200000);
+    //关闭等待连接线程
+    pthread_cancel(accept_pid);
+    pthread_join(accept_pid,NULL);
+    close(sev_fd);
+    return 0;
+}
+
+int sev_send(int fd,char *buf,int size){
+    if (sev_state==0) return -1;
+    return send(fd,buf,size,0);
+}
+
+sev_t sevdev={
+   sev_start,
+   sev_stop,
+   sev_send
+};
+
+//write.c
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include "libsev.h"
+
+int recvdata(int fd,char* buf,int size){
+    printf("--- size=%d,buf=%s\n",size,buf);
+    sevdev.send(fd,"ok",3);
+}
+
+int main(int argc,char **argv){
+    int err= sevdev.start(atoi(argv[1]),recvdata);
+    if (err==-1) return -1;
+    char buf[256];
+    while(1){
+       scanf("%s",buf);
+       if (strcmp(buf,"q")==0) break;
+    }
+    sevdev.stop();
+}
+
+
+客户端
+//libcli.h
+#ifndef LIBCLI_H
+#define LIBCLI_H
+typedef struct CLIDEV{
+   int (*start)(char* sevip,int sevport,int (*handler)(char *buf,int size));
+   int (*stop)();
+   int (*send)(char* buf,int size);
+} cli_t;
+extern cli_t clidev;
+#endif
+
+//libcli.c
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <errno.h>
+#include <pthread.h>
+#include <sys/socket.h>
+#include <netinet/in.h>
+#include "libcli.h"
+#define RECVSIZE 4096
+int (*cli_recv)(char *buf,int size);
+int cli_fd;
+pthread_t recv_pid;
+int cli_state;
+void* recv_pthread(void* arg){
+   char *buf=(char*)malloc(RECVSIZE);
+   fd_set rfds;
+   struct timeval t_out;
+   while(cli_state){
+       FD_ZERO(&rfds);
+       FD_SET(cli_fd,&rfds);
+       t_out.tv_sec=0;
+       t_out.tv_usec=200000;
+       int err=select(cli_fd+1,&rfds,NULL,NULL,&t_out);
+       if (err==-1) break;  //设备出现问题
+       else if (err==0) continue; //超时
+       //接收数据
+       int size=recv(cli_fd,buf,RECVSIZE,0);
+       if (size<=0) break; //网络断开
+       //将数据发送到UI
+       cli_recv(buf,size);
+    }
+    //释放内存
+    free(buf);
+    //关闭客户端描述符
+    close(cli_fd);
+}
+int cli_start(char* sevip,int sevport,int (*handler)(char *buf,int size)){
+    if (cli_state==1) return -1;
+    cli_recv=handler;
+    //创建套接字
+    cli_fd=socket(AF_INET,SOCK_STREAM,0);
+    if (cli_fd==-1) goto SOCKERR;
+    //绑定
+    struct sockaddr_in cliaddr;
+    cliaddr.sin_family=AF_INET;
+    cliaddr.sin_port=0; //自动分配端口
+    cliaddr.sin_addr.s_addr=INADDR_ANY; //绑定所有ip
+    int err=bind(cli_fd,(struct sockaddr*)&cliaddr,sizeof(cliaddr));
+    if (err==-1) goto BINDERR;
+    //连接服务器
+    struct sockaddr_in sevaddr;
+    sevaddr.sin_family=AF_INET;
+    sevaddr.sin_port=htons(sevport);
+    sevaddr.sin_addr.s_addr=inet_addr(sevip);
+    err=connect(cli_fd,(struct sockaddr*)&sevaddr,sizeof(sevaddr));
+    if (err==-1) goto BINDERR;
+    //启动等待连接线程
+    cli_state=1;
+    pthread_create(&recv_pid,NULL,recv_pthread,NULL);
+    return 0;
+BINDERR:
+    close(cli_fd);
+SOCKERR:
+    printf("----- err=%s\n",strerror(errno));
+    return -1;
+}
+
+int cli_stop(){
+    if (cli_state==0) return -1;
+    //关闭所有的客户端线程
+    cli_state=0;
+    pthread_join(recv_pid,NULL);
+    return 0;
+}
+
+int cli_send(char *buf,int size){
+    if (cli_state==0) return -1;
+    return send(cli_fd,buf,size,0);
+}
+
+cli_t clidev={
+   cli_start,
+   cli_stop,
+   cli_send
+};
+
+
+//read.c
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include "libcli.h"
+
+int recvdata(char* buf,int size){
+    printf("--- size=%d,buf=%s\n",size,buf);
+}
+
+int main(int argc,char **argv){
+    int err= clidev.start(argv[1],atoi(argv[2]),recvdata);
+    if (err==-1) return -1;
+    char buf[256];
+    while(1){
+       scanf("%s",buf);
+       clidev.send(buf,strlen(buf));
+       if (strcmp(buf,"q")==0) break;
+    }
+    clidev.stop();
+}
+                   
+                   
+
+四、ICMP
+    //IP头
+    #include <netinet/ip.h>
+    struct ip {
+        unsigned int ip_hl:4;    //ip头长  ip_hl<<2;
+        u_short ip_len;          //数据总长
+        ......
+    };
+    //ICMP报头格式数据结构定义如下：
+      struct icmp{
+          u_int8_t  icmp_type;  //消息类型 有两种：请求ICMP_ECHO，应答ICMP_ECHOREPLY
+          u_int8_t  icmp_code;  //编码
+          u_int16_t icmp_cksum; //校验码  用来校验发送的数据和接收的数据是否一致
+          union{
+              struct ih_idseq{     /* echo datagram */  
+                 u_int16_t icd_id; //标识，可以用进程ID
+                 u_int16_t icd_seq;//请求的码  
+              } ih_idseq;
+              u_int32_t ih_void;
+            ......
+          } icmp_hun;
+       #define icmp_id     icmp_hun.ih_idseq.icd_id
+       #define icmp_seq    icmp_hun.ih_idseq.icd_seq
+          union {
+              u_int8_t    id_data[1];  //用来推带数据
+              .....
+          } icmp_dun;
+       #define icmp_data   icmp_dun.id_data  //程序可携带的数据
+       };
+    
+    icmp_type: ping报文分为两种
+    	  ICMP_ECHO      0 请求回送
+    	  ICMP_ECHOREPLY 8 请求回应
+    Ping命令中需要显示的信息，包括icmp_seq和ttl都已有实现的办法，但还缺rtt往返时间。为了实现这一功能，可利用ICMP在icmp_data来携带一个时间戳。
+    
+
+示例：实现ping函数
+  1 #include <stdio.h>
+  2 #include <stdlib.h>
+  3 #include <string.h>
+  4 #include <errno.h>
+  5 #include <netinet/in.h>
+  6 #include <netinet/ip.h>
+  7 #include <netinet/ip_icmp.h>
+  8 #include <netdb.h>
+  9 #include <sys/socket.h>
+ 10 
+ 11 #define PACKET_SIZE 4096
+ 12 #define ERROR   0
+ 13 #define SUCCESS 1
+14 //校验和算法
+ 15 unsigned short cal_chksum(unsigned short *addr,int len){
+ 16     int nleft=len;
+ 17     int sum=0;
+ 18     unsigned short *w=addr;
+ 19     unsigned short answer=0;
+ 20     //把ICMP报头二进制数据以2字节为单位累加起来
+ 21     while(nleft>1){
+ 22        sum+=*w++;
+ 23        nleft-=2;
+ 24     }
+ 25     //若ICMP报头为奇数个字节，会剩下最后一字节。把最后一个字节视为一个2字节数据的高字节，这个2字节数据的低字节为0，继续累加
+ 26     if( nleft==1){
+ 27        *(unsigned char *)(&answer)=*(unsigned char *)w;
+ 28        sum+=answer;
+ 29     }
+ 30     sum=(sum>>16)+(sum&0xffff);
+ 31     sum+=(sum>>16);
+ 32     answer=~sum;
+ 33     return answer;
+ 34 }
+36 //ping函数 timeout单位为毫秒
+ 37 int ping(char *ip,int timeout){
+ 38     //创建socket
+ 39     int sockfd=socket(AF_INET,SOCK_RAW,IPPROTO_ICMP);
+ 40     if (sockfd <0){
+ 41        printf("socket error=%s\n",strerror(errno));
+ 42        return ERROR;
+ 43     }
+ 
+ 48     int err;
+    //设置要发送的数据包
+ 58     char senddata[PACKET_SIZE];  //申请发包数据内存
+ 59     struct icmp *icmp=(struct icmp *)senddata;
+ 60     icmp->icmp_type=ICMP_ECHO; //要发送的消息类型，代表回显请求
+ 61     icmp->icmp_code=0;         //编码，当前没有使用
+ 62     icmp->icmp_cksum=0;        //校验码
+ 63     icmp->icmp_seq=0;          //icmp包的请求内容
+ 64     icmp->icmp_id=getpid();    //当前进程的ID号
+ 65     gettimeofday((struct timeval *)icmp->icmp_data,NULL); //在发包的数据中记录发送时间
+ 66     icmp->icmp_cksum=cal_chksum((unsigned short *)icmp,sizeof(struct icmp)); //将校验码写入结构中
+ 67     //填写sockaddr数据
+ 68     struct sockaddr_in addr;
+ 69     bzero(&addr,sizeof(addr));
+ 70     addr.sin_family=AF_INET;
+ 71     addr.sin_addr.s_addr=inet_addr(ip);
+ 72     //发送数据包
+ 73     err=sendto(sockfd,senddata,sizeof(struct icmp),0,(struct sockaddr *)&addr,sizeof(addr));
+ 74     if (err <1){
+ 75        printf("sendto error=%s\n",strerror(errno));
+ 76        close(sockfd);
+ 77        return ERROR;
+ 78     }
+ 79  
+    //等待接收对方应答消息
+ 44     //设置发送时限
+ 45     struct timeval t_out;
+ 46     t_out.tv_sec=timeout/1000;
+ 47     t_out.tv_usec=timeout%1000;80     fd_set readfds;
+ 81     while(1){ //用循环是防止其它ping的应答消息影响
+ 82        //----设定超时时间
+ 83        FD_ZERO(&readfds);
+ 84        FD_SET(sockfd,&readfds);
+ 85        int maxfd=sockfd+1;
+ 86        err=select(maxfd,&readfds,NULL,NULL,&t_out);
+ 87        if (err <=0){
+ 88            printf("ip:%s,Time out error\n",ip);
+ 89            close(sockfd);
+ 90            return ERROR;
+ 91        }
+ 92        else { //接收数据
+ 93            char recvdata[PACKET_SIZE];  //申请收包数据内存
+ 94            memset(recvdata,0,PACKET_SIZE);
+ 95            struct sockaddr_in fromaddr;
+ 96            int fromlen=sizeof(fromaddr);
+ 97            err=recvfrom(sockfd,recvdata,PACKET_SIZE,0,(struct sockaddr *)&fromaddr,&fromlen);
+ 98            if (err<1) break;
+ 99            //---判断是否为自已发送的ping包回复
+100            char *from_ip=(char *)inet_ntoa(fromaddr.sin_addr);
+101            if (strcmp(from_ip,ip)!=0){
+102                printf("NowPing ip:%s  from ip:%s  ping wrong!\n",ip,from_ip);
+103                close(sockfd);
+104                return ERROR;
+105            }
+106            //---判断包内回复数据
+107            struct ip *iph=(struct ip *)recvdata;
+108            icmp=(struct icmp *)(recvdata +(iph->ip_hl <<2));
+109            if (icmp->icmp_type == ICMP_ECHOREPLY && icmp->icmp_id == getpid()){ //已ping通
+110                printf("ping: ok!\n");
+111                close(sockfd);
+112                return SUCCESS;
+113            }
+114            else
+115               continue;
+116        }
+117     }
+118 }
+119 
+120 int main(int argc,char **argv){
+121     int i;
+122     for(i=0;i<10;i++){
+123        ping(argv[1],200);
+124        sleep(1);
+125     }
+126 }
+
+
+五、自定义的协议和接发流程 *****
+    以文件传输为例：
+    
+    协议：自已收发数据时，对数据的说明。双方定制的。
+    一般有两种模式：图表、.h文件
+    
+    文件
+       编写说明
+          id 每次发送有编号，代表哪次发的数据
+          cmd 代表对方要做什么
+          len 数据总长度  例如200M*1024*1024
+          size 本次发送的长度
+          err  错误号
+          note 附助说明
+          cknum 校验码
+       要发送的数据
+          文件内容（数据）
+          
+    1)图表
+    2)结构体
+       .h
+       数据头
+       #define REQ_FILE_SEND 0x01  //请求
+       #define REV_FILE_SEND 0x02  //应答       
+       struct Head{
+          int id;
+          int cmd;
+          int len;
+          int size;
+          int err;
+          char note[256];
+          int chnum;
+       };
+       数据体
+       struct Data{
+          char buf[1024];
+       };
+       
+       
+       网络传输的流程
+       
+
+例：
+//协义头 protocol.h
+#ifndef PROTOCOL_H
+#define PROTOCOL_H
+//定义错误号
+#define ERR_CHECKNUM        00000001  //校验错误
+#define ERR_GETFILE_NOTHING 00000002  //没有要获取的文件
+
+//定义宏指令
+#define REQ_CMD_GETFILELS 000000001  //获取文件列表请求
+#define REV_CMD_GETFILELS 000010001  //获取文件列表应答
+#define REQ_CMD_GETFILE   000000002  //获取文件
+#define REV_CMD_GETFILE   000010002  //获取文件
+
+//定义协议头
+typedef struct HEAD{
+   int id;  //代表本次发送数据的编号
+   int cmd; //指令 
+   int len; //总长 
+   int size;//本次长度
+   int err; //错误号 0为正确，非零为错误
+   int cknum;//校验码
+} head_t;
+
+//定义发送的数据
+//1. 获取文件列表请求  
+struct REQFILELS{
+   char dirname[256]; //请求列表时，可指定目录名
+};
+//2. 获取列表的应答
+//发送的数据为 char数组类型，长度在head中指定。文件名与文件名之间用 "|"分隔
+
+//3.获取文件请求
+struct REQFILE{
+   char filename[256]; //请求时，必须指定要下载的包含目录的文件名
+};
+//4.获取文件应答
+//发送文件数据，本次发送的长度，记录在head中，当累计长度＞＝总长，代表发送完毕
+struct REVFILE{
+   char filename[256];
+   char data[2048];
+};
+
+#endif
+       
+          
+//read.c 客户端
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <errno.h>
+#include <fcntl.h>
+#include "libsock/libcli.h"
+#include "protocol.h"
+
+char sendbuf[4096];
+//校验码
+unsigned short cal_chksum(char *addr,int len){
+    int nleft=len;
+    int sum=0;
+    unsigned short *w=(unsigned short*)addr;
+    unsigned short answer=0;
+    //把ICMP报头二进制数据以2字节为单位累加起来
+    while(nleft>1){
+       sum+=*w++;
+       nleft-=2;
+    }
+    //若ICMP报头为奇数个字节，会剩下最后一字节。把最后一个字节视为一个2字节数据的高字节，这个2字节数据的低字节为0，继续累加
+    if( nleft==1){
+       *(unsigned char *)(&answer)=*(unsigned char *)w;
+       sum+=answer;
+    }
+    sum=(sum>>16)+(sum&0xffff);
+    sum+=(sum>>16);
+    answer=~sum;
+    return answer;
+}
+//回调，用来接收数据
+int recvdata(char *buf,int size){
+    struct HEAD *head=(struct HEAD*)buf;
+    //先校验数据
+    /*
+    int cknum=head->cknum;
+    head->cknum=0;
+    if (cal_chksum(buf,sizeof(struct HEAD)+head->size)!=cknum){
+        //接收数据有误,装载协议头
+        head->cmd=head->cmd | 00010000;
+        head->err=ERR_CHECKNUM;
+        head->cknum=cal_chksum(buf,sizeof(struct HEAD));
+        clidev.send(buf,sizeof(struct HEAD));
+        return -1;
+    }
+    */
+    printf("----------------------------- recv \n");
+    //解析协议
+    switch(head->cmd){
+    case REV_CMD_GETFILELS: //客户端的应答 要文件列表
+        {
+          char *data=buf+sizeof(struct HEAD);
+          char *result=strtok(data,"|");
+          while(result != NULL ){
+              printf("%s\n",result);
+              result=strtok(NULL,"|");
+          }
+        }
+        break;
+    case REV_CMD_GETFILE: //客户端的应答 要文件
+        {
+           static int allsize=0;
+           static fd=0;
+           char *filename=buf+sizeof(struct HEAD);
+           //打开文件
+           if (allsize==0){
+              printf("--------- file 1\n");
+              fd=open(filename,O_CREAT | O_RDWR);
+           }
+           if (fd==-1) return -1;
+           printf("--------- file 2\n");
+           //保存数据
+           write(fd,buf+sizeof(struct HEAD)+256,head->size-256);
+           allsize+=head->size-256;
+           //关闭文件
+           if(allsize>=head->len){
+              printf("--------- file 3\n");
+              close(fd);
+              fd=0;
+              allsize=0;
+           }
+        }
+        break;
+    }
+}
+
+int main(int argc,char **argv){
+    int i=0;
+    //启动服务
+    int err=clidev.start(argv[1],atoi(argv[2]),recvdata);
+    if (err==-1) return -1;
+
+    char buf[256];
+    while(1){
+        scanf("%s",buf);
+        if (strcmp(buf,"l")==0) {
+           printf("input list dir:\n");
+           scanf("%s",buf);
+           //装载协议头 
+           struct HEAD *head=(struct HEAD*)sendbuf;
+           head->id=i++;
+           head->cmd=REQ_CMD_GETFILELS;
+           head->len=256;
+           head->size=256;
+           head->err=0;
+           head->cknum=0;
+           //装载数据
+           char *data=sendbuf+sizeof(struct HEAD);
+           strcpy(data,buf);//指定要获取当前目录文件列表
+           printf("----dir =%s\n",data);
+           //校验码
+           head->cknum=cal_chksum(sendbuf,sizeof(struct HEAD)+head->size);
+           //发送
+           clidev.send(sendbuf,sizeof(struct HEAD)+head->size);
+        }
+        else if (strcmp(buf,"f")==0){
+           printf("input filename:\n");
+           scanf("%s",buf);
+           //装载协议头 
+           struct HEAD *head=(struct HEAD*)sendbuf;
+           head->id=i++;
+           head->cmd=REQ_CMD_GETFILE;
+           head->len=256;
+           head->size=256;
+           head->err=0;
+           head->cknum=0;
+           //装载数据
+           char *data=sendbuf+sizeof(struct HEAD);
+           strcpy(data,buf);//指定要获取当前目录文件
+           //校验码
+           head->cknum=cal_chksum(sendbuf,sizeof(struct HEAD)+head->size);
+           //发送
+           clidev.send(sendbuf,sizeof(struct HEAD)+head->size);
+        }
+        else if (strcmp(buf,"q")==0) break; //关闭窗口
+    }
+}
+
+
+//write.c 服务端
+#include <sys/stat.h>
+#include <dirent.h>
+#include <fcntl.h>
+#include "libsock/libsev.h"
+#include "protocol.h"
+unsigned short cal_chksum(char *addr,int len){
+    int nleft=len;
+    int sum=0;
+    unsigned short *w=(unsigned short*)addr;
+    unsigned short answer=0;
+    //把ICMP报头二进制数据以2字节为单位累加起来
+    while(nleft>1){
+       sum+=*w++;
+       nleft-=2;
+    }
+    //若ICMP报头为奇数个字节，会剩下最后一字节。把最后一个字节视为一个2字节数据的高字节，这个2字节数据的低字节为0，继续累加
+    if( nleft==1){
+       *(unsigned char *)(&answer)=*(unsigned char *)w;
+       sum+=answer;
+    }
+    sum=(sum>>16)+(sum&0xffff);
+    sum+=(sum>>16);
+    answer=~sum;
+    return answer;
+}
+char *getfilels(char *path){
+   static char ls[4096];
+   struct stat st;
+   char pathname[256];
+   DIR* fp=opendir(path);
+   if (fp==NULL) return NULL;
+   struct dirent *db;
+   int i=0;
+   while((db=readdir(fp))!=NULL){
+      if (db->d_name[0]!='.') { //打印文件名或字符串
+           sprintf(pathname,"%s%s",path,db->d_name);
+           stat(pathname,&st); //获取文件属性
+           if (S_ISREG(st.st_mode)){
+              if (i==0) strcpy(ls,pathname);
+              else sprintf(ls,"%s|%s",ls,pathname);
+              i++;
+           }
+        }
+   }
+   closedir(fp);
+   if (i==0) return NULL;
+   else return ls;
+}
+//回调，用来接收数据
+int recvdata(int sockfd,char *buf,int size){
+    struct HEAD *head=(struct HEAD*)buf;
+    printf("-------------1\n");
+    //先校验数据
+    /*
+    int cknum=head->cknum;
+    head->cknum=0;
+    if (cal_chksum(buf,sizeof(struct HEAD)+head->size)!=cknum){
+        //接收数据有误
+        //装载协议头
+        head->cmd=head->cmd | 00010000;
+        head->err=ERR_CHECKNUM; 
+        head->cknum=cal_chksum(buf,sizeof(struct HEAD));
+        sevdev.send(fd,buf,sizeof(struct HEAD));  
+        printf("-------------2\n");
+        return -1;
+    }
+    */
+    //解析数据
+    switch(head->cmd){
+    case REQ_CMD_GETFILELS: //客户端的请求 要文件列表
+      {
+         char *dir=buf+sizeof(struct HEAD);
+         printf("-------------3 %s\n",dir);
+         //装载协议头
+         head->cmd=REV_CMD_GETFILELS;
+         head->err=0;
+         char *filels=buf+sizeof(struct HEAD);
+         strcpy(filels,getfilels(dir));
+         head->len=strlen(filels);
+         head->size=strlen(filels);
+         head->cknum=cal_chksum(buf,sizeof(struct HEAD)+head->size);
+         //发送数据
+         sevdev.send(sockfd,buf,sizeof(struct HEAD)+head->size);
+      }
+      break;
+    case REQ_CMD_GETFILE: //客户端的请求 要文件
+      {
+         char *filename=buf+sizeof(struct HEAD);
+         printf("---------- get file 1 %s\n",filename);
+         int fd1=open(filename,O_RDONLY);
+         if (fd1==-1){
+            //发送失败应答
+         }
+         else{
+            printf("---------- get file 2 \n");
+            int allsize=lseek(fd1,0,2);
+            lseek(fd1,0,0);
+            head->cmd=REV_CMD_GETFILE;
+            head->err=0;
+            head->len=allsize;
+            while(allsize>0){
+                size=allsize%2048;
+                if (size==0) size=2048;
+                size=read(fd1,buf+sizeof(struct HEAD)+256,size);
+                head->size=size+256;
+                head->cknum=cal_chksum(buf,sizeof(struct HEAD)+size+256);
+                allsize-=size;
+                printf("---------- get file 3 %d \n",size);
+                //发送数据
+                sevdev.send(sockfd,buf,sizeof(struct HEAD)+256+size);
+            }
+            printf("---------- get file 4 \n");
+            close(fd1);
+         }
+      }
+      break;
+    }
+
+}
+
+int main(int argc,char **argv){
+    //启动服务
+    int err=sevdev.start(atoi(argv[1]),recvdata);
+    if (err==-1) return -1;
+
+    char buf[256];
+    while(1){
+        scanf("%s",buf);
+        if (strcmp(buf,"q")==0) break; //关闭窗口
+    }
+    //停止服务
+    sevdev.stop();
+}
+       
+
+
+
+六、http的实现
+    http用于下载文件，下载html文件，将该文件显示在浏览器内，浏览器是对html进行解析
+    
+    使用的是tcp协议下载的。http相当于自已写的数据协议
+    
+     
+
+熟悉TCP/IP，具有网络编程经验，了解SMTP、HTTP等协议；
+http协议学习系列
+1. 基础概念篇
+1.1 介绍
+
+  HTTP是Hyper Text Transfer Protocol（超文本传输协议）的缩写。它的发展是万维网协会（World Wide Web Consortium）和Internet工作小组IETF（Internet Engineering Task Force）合作的结果，（他们）最终发布了一系列的RFC，RFC 1945定义了HTTP/1.0版本。其中最著名的就是RFC 2616。RFC 2616定义了今天普遍使用的一个版本——HTTP 1.1。
+HTTP协议（HyperText Transfer Protocol，超文本传输协议）是用于从WWW服务器传输超文本到本地浏览器的传送协议。它可以使浏览器更加高效，使网络传输减少。它不仅保证计算机正确快速地传输超文本文档，还确定传输文档中的哪一部分，以及哪部分内容首先显示(如文本先于图形)等。
+HTTP是一个应用层协议，由请求和响应构成，是一个标准的客户端服务器模型。HTTP是一个无状态的协议。
+1.2 在TCP/IP协议栈中的位置
+
+HTTP协议通常承载于TCP协议之上，有时也承载于TLS或SSL协议层之上，这个时候，就成了我们常说的HTTPS。如下图所示：
+    
+默认HTTP的端口号为80，HTTPS的端口号为443。
+1.3 HTTP的请求响应模型
+
+HTTP协议永远都是客户端发起请求，服务器回送响应。见下图：
+   
+这样就限制了使用HTTP协议，无法实现在客户端没有发起请求的时候，服务器将消息推送给客户端。
+HTTP协议是一个无状态的协议，同一个客户端的这次请求和上次请求是没有对应关系。
+1.4 工作流程
+
+一次HTTP操作称为一个事务，其工作过程可分为四步：
+1）首先客户机与服务器需要建立连接。只要单击某个超级链接，HTTP的工作开始。
+2）建立连接后，客户机发送一个请求给服务器，请求方式的格式为：统一资源标识符（URL）、协议版本号，后边是MIME信息包括请求修饰符、客户机信息和可能的内容。
+3）服务器接到请求后，给予相应的响应信息，其格式为一个状态行，包括信息的协议版本号、一个成功或错误的代码，后边是MIME信息包括服务器信息、实体信息和可能的内容。
+4）客户端接收服务器所返回的信息通过浏览器显示在用户的显示屏上，然后客户机与服务器断开连接。
+如果在以上过程中的某一步出现错误，那么产生错误的信息将返回到客户端，有显示屏输出。对于用户来说，这些过程是由HTTP自己完成的，用户只要用鼠标点击，等待信息显示就可以了。
+1.5 使用Wireshark抓TCP、http包
+
+打开Wireshark，选择工具栏上的“Capture”->“Options”，界面选择如图1所示：
+                            
+图1 设置Capture选项
+一般读者只需要选择最上边的下拉框，选择合适的Device，而后点击“Capture Filter”，此处选择的是“HTTP TCP port（80）”，选择后点击上图的“Start”开始抓包。
+                                  
+图2 选择Capture Filter
+例如在浏览器中打开http://image.baidu.com/，抓包如图3所示：
+    http://www.blogjava.net/images/blogjava_net/amigoxie/40799/o_http%e5%8d%8f%e8%ae%ae%e5%ad%a6%e4%b9%a0-%e6%a6%82%e5%bf%b5-3.jpg
+
+图3   抓包
+在上图中，可清晰的看到客户端浏览器（ip为192.168.2.33）与服务器的交互过程：
+1）No1：浏览器（192.168.2.33）向服务器（220.181.50.118）发出连接请求。此为TCP三次握手第一步，此时从图中可以看出，为SYN，seq:X （x=0）
+2）No2：服务器（220.181.50.118）回应了浏览器（192.168.2.33）的请求，并要求确认，此时为：SYN，ACK，此时seq：y（y为0），ACK：x+1（为1）。此为三次握手的第二步；
+3）No3：浏览器（192.168.2.33）回应了服务器（220.181.50.118）的确认，连接成功。为：ACK，此时seq：x+1（为1），ACK：y+1（为1）。此为三次握手的第三步；
+4）No4：浏览器（192.168.2.33）发出一个页面HTTP请求；
+5）No5：服务器（220.181.50.118）确认；
+6）No6：服务器（220.181.50.118）发送数据；
+7）No7：客户端浏览器（192.168.2.33）确认；
+8）No14：客户端（192.168.2.33）发出一个图片HTTP请求；
+9）No15：服务器（220.181.50.118）发送状态响应码200 OK
+……
+1.6 头域
+
+每个头域由一个域名，冒号（:）和域值三部分组成。域名是大小写无关的，域值前可以添加任何数量的空格符，头域可以被扩展为多行，在每行开始处，使用至少一个空格或制表符。
+在抓包的图中，No14点开可看到如图4所示：
+   http://www.blogjava.net/images/blogjava_net/amigoxie/40799/o_http%e5%8d%8f%e8%ae%ae%e5%ad%a6%e4%b9%a0-%e6%a6%82%e5%bf%b5-4.jpg
+
+图4 http请求消息
+       回应的消息如图5所示：
+               
+图5 http状态响应信息
+1.6.1 host头域
+
+Host头域指定请求资源的Intenet主机和端口号，必须表示请求url的原始服务器或网关的位置。HTTP/1.1请求必须包含主机头域，否则系统会以400状态码返回。
+图5中host那行为：
+   
+1.6.2 Referer头域
+
+Referer头域允许客户端指定请求uri的源资源地址，这可以允许服务器生成回退链表，可用来登陆、优化cache等。他也允许废除的或错误的连接由于维护的目的被追踪。如果请求的uri没有自己的uri地址，Referer不能被发送。如果指定的是部分uri地址，则此地址应该是一个相对地址。
+在图4中，Referer行的内容为：
+   
+1.6.3 User-Agent头域
+
+User-Agent头域的内容包含发出请求的用户信息。
+在图4中，User-Agent行的内容为：
+   http://www.blogjava.net/images/blogjava_net/amigoxie/40799/o_http%e5%8d%8f%e8%ae%ae%e5%ad%a6%e4%b9%a0-%e6%a6%82%e5%bf%b5-8.jpg
+
+1.6.4 Cache-Control头域
+
+Cache-Control指定请求和响应遵循的缓存机制。在请求消息或响应消息中设置Cache-Control并不会修改另一个消息处理过程中的缓存处理过程。请求时的缓存指令包括no-cache、no-store、max-age、max-stale、min-fresh、only-if-cached，响应消息中的指令包括public、private、no-cache、no-store、no-transform、must-revalidate、proxy-revalidate、max-age。
+在图5中的该头域为：
+   
+
+1.6.5 Date头域
+
+Date头域表示消息发送的时间，时间的描述格式由rfc822定义。例如，Date:Mon,31Dec200104:25:57GMT。Date描述的时间表示世界标准时，换算成本地时间，需要知道用户所在的时区。
+图5中，该头域如下图所示：
+   
+ 
+1.7 HTTP的几个重要概念
+
+1.7.1连接：Connection
+
+一个传输层的实际环流，它是建立在两个相互通讯的应用程序之间。
+在http1.1，request和reponse头中都有可能出现一个connection的头，此header的含义是当client和server通信时对于长链接如何进行处理。
+在http1.1中，client和server都是默认对方支持长链接的， 如果client使用http1.1协议，但又不希望使用长链接，则需要在header中指明connection的值为close；如果server方也不想支持长链接，则在response中也需要明确说明connection的值为close。不论request还是response的header中包含了值为close的connection，都表明当前正在使用的tcp链接在当天请求处理完毕后会被断掉。以后client再进行新的请求时就必须创建新的tcp链接了。
+1.7.2消息：Message
+
+HTTP通讯的基本单位，包括一个结构化的八元组序列并通过连接传输。
+1.7.3请求：Request
+
+一个从客户端到服务器的请求信息包括应用于资源的方法、资源的标识符和协议的版本号。
+1.7.4响应：Response
+
+一个从服务器返回的信息包括HTTP协议的版本号、请求的状态(例如“成功”或“没找到”)和文档的MIME类型。
+1.7.5资源：Resource
+
+由URI标识的网络数据对象或服务。
+1.7.6实体：Entity
+
+数据资源或来自服务资源的回映的一种特殊表示方法，它可能被包围在一个请求或响应信息中。一个实体包括实体头信息和实体的本身内容。
+1.7.7客户机：Client
+
+一个为发送请求目的而建立连接的应用程序。
+1.7.8用户代理：UserAgent
+
+初始化一个请求的客户机。它们是浏览器、编辑器或其它用户工具。
+1.7.9服务器：Server
+
+一个接受连接并对请求返回信息的应用程序。
+1.7.10源服务器：Originserver
+
+是一个给定资源可以在其上驻留或被创建的服务器。
+1.7.11代理：Proxy
+
+一个中间程序，它可以充当一个服务器，也可以充当一个客户机，为其它客户机建立请求。请求是通过可能的翻译在内部或经过传递到其它的服务器中。一个代理在发送请求信息之前，必须解释并且如果可能重写它。
+代理经常作为通过防火墙的客户机端的门户，代理还可以作为一个帮助应用来通过协议处理没有被用户代理完成的请求。
+1.7.12网关：Gateway
+
+一个作为其它服务器中间媒介的服务器。与代理不同的是，网关接受请求就好象对被请求的资源来说它就是源服务器；发出请求的客户机并没有意识到它在同网关打交道。
+网关经常作为通过防火墙的服务器端的门户，网关还可以作为一个协议翻译器以便存取那些存储在非HTTP系统中的资源。
+1.7.13通道：Tunnel
+
+是作为两个连接中继的中介程序。一旦激活，通道便被认为不属于HTTP通讯，尽管通道可能是被一个HTTP请求初始化的。当被中继的连接两端关闭时，通道便消失。当一个门户(Portal)必须存在或中介(Intermediary)不能解释中继的通讯时通道被经常使用。
+1.7.14缓存：Cache
+
+反应信息的局域存储。
+    附录：参考资料
+《http_百度百科》：http://baike.baidu.com/view/9472.htm
+《结果编码和http状态响应码》：http://blog.tieniu1980.cn/archives/377
+《分析TCP的三次握手》：
+http://cache.baidu.com/c?m=9f65cb4a8c8507ed4fece763104c8c711923d030678197027fa3c215cc7905141130a8e5747e0d548d98297a5ae91e03f7f63772315477e3cacdd94cdbbdc42225d82c36734f844315c419d891007a9f34d507a9f916a2e1b065d2f48193864353bb15543897f1fb4d711edd1b86033093b1e94e022e67adec40728e2e605f983431c5508fe4&p=c6769a46c5820efd08e2973b42&user=baidu
+《使用Wireshark来检测一次HTTP连接过程》：
+http://blog.163.com/wangbo_tester/blog/static/12806792120098174162288/
+《http协议的几个重要概念》：http://nc.mofcom.gov.cn/news/10819972.html
+《http协议中connection头的作用》：
+       http://blog.csdn.net/barfoo/archive/2008/06/05/2514667.aspx 
+2. 协议详解篇
+2.1 HTTP/1.0和HTTP/1.1的比较
+
+RFC 1945定义了HTTP/1.0版本，RFC 2616定义了HTTP/1.1版本。
+笔者在blog上提供了这两个RFC中文版的下载地址。
+RFC1945下载地址：
+http://www.blogjava.net/Files/amigoxie/RFC1945（HTTP）中文版.rar
+RFC2616下载地址：
+http://www.blogjava.net/Files/amigoxie/RFC2616（HTTP）中文版.rar
+2.1.1建立连接方面
+
+HTTP/1.0 每次请求都需要建立新的TCP连接，连接不能复用。HTTP/1.1 新的请求可以在上次请求建立的TCP连接之上发送，连接可以复用。优点是减少重复进行TCP三次握手的开销，提高效率。
+注意：在同一个TCP连接中，新的请求需要等上次请求收到响应后，才能发送。
+2.1.2 Host域
+
+HTTP1.1在Request消息头里头多了一个Host域, HTTP1.0则没有这个域。
+Eg：
+    GET /pub/WWW/TheProject.html HTTP/1.1
+    Host: www.w3.org
+
+    可能HTTP1.0的时候认为，建立TCP连接的时候已经指定了IP地址，这个IP地址上只有一个host。
+2.1.3日期时间戳
+
+(接收方向)
+无论是HTTP1.0还是HTTP1.1，都要能解析下面三种date/time stamp：
+Sun, 06 Nov 1994 08:49:37 GMT ; RFC 822, updated by RFC 1123
+Sunday, 06-Nov-94 08:49:37 GMT ; RFC 850, obsoleted by RFC 1036
+Sun Nov 6 08:49:37 1994       ; ANSI C's asctime() format
+       (发送方向)
+HTTP1.0要求不能生成第三种asctime格式的date/time stamp；
+HTTP1.1则要求只生成RFC 1123(第一种)格式的date/time stamp。
+2.1.4状态响应码
+
+状态响应码100 (Continue) 状态代码的使用，允许客户端在发request消息body之前先用request header试探一下server，看server要不要接收request body，再决定要不要发request body。
+客户端在Request头部中包含
+Expect: 100-continue
+       Server看到之后呢如果回100 (Continue) 这个状态代码，客户端就继续发request body。这个是HTTP1.1才有的。
+另外在HTTP/1.1中还增加了101、203、205等等性状态响应码
+2.1.5请求方式
+
+HTTP1.1增加了OPTIONS, PUT, DELETE, TRACE, CONNECT这些Request方法.
+       Method         = "OPTIONS"                ; Section 9.2
+                      | "GET"                    ; Section 9.3
+                      | "HEAD"                   ; Section 9.4
+                      | "POST"                   ; Section 9.5
+                      | "PUT"                    ; Section 9.6
+                      | "DELETE"                 ; Section 9.7
+                      | "TRACE"                  ; Section 9.8
+                      | "CONNECT"                ; Section 9.9
+                      | extension-method
+       extension-method = token
+2.2 HTTP请求消息
+
+2.2.1请求消息格式
+
+请求消息格式如下所示：
+请求行
+通用信息头|请求头|实体头
+CRLF(回车换行)
+实体内容
+其中“请求行”为：请求行 = 方法 [空格] 请求URI [空格] 版本号 [回车换行]
+请求行实例：
+Eg1：
+GET /index.html HTTP/1.1
+       Eg2：
+POST http://192.168.2.217:8080/index.jsp HTTP/1.1
+HTTP请求消息实例：
+GET /hello.htm HTTP/1.1
+Accept: */*
+Accept-Language: zh-cn
+Accept-Encoding: gzip, deflate
+If-Modified-Since: Wed, 17 Oct 2007 02:15:55 GMT
+If-None-Match: W/"158-1192587355000"
+User-Agent: Mozilla/4.0 (compatible; MSIE 6.0; Windows NT 5.1; SV1)
+Host: 192.168.2.162:8080
+Connection: Keep-Alive
+
+2.2.2请求方法
+
+       HTTP的请求方法包括如下几种：
+q      GET
+q      POST
+q      HEAD
+q      PUT
+q      DELETE
+q      OPTIONS
+q      TRACE
+q      CONNECT
+2.3 HTTP响应消息
+
+2.3.1响应消息格式
+
+HTTP响应消息的格式如下所示：
+状态行
+通用信息头|响应头|实体头
+CRLF
+实体内容
+其中：状态行 = 版本号 [空格] 状态码 [空格] 原因 [回车换行]
+状态行举例：
+Eg1：
+HTTP/1.0 200 OK 
+      Eg2：
+HTTP/1.1 400 Bad Request
+     HTTP响应消息实例如下所示：
+HTTP/1.1 200 OK
+ETag: W/"158-1192590101000"
+Last-Modified: Wed, 17 Oct 2007 03:01:41 GMT
+Content-Type: text/html
+Content-Length: 158
+Date: Wed, 17 Oct 2007 03:01:59 GMT
+Server: Apache-Coyote/1.1
+2.3.2 http的状态响应码
+2.3.2.1  1**：请求收到，继续处理
+
+100——客户必须继续发出请求
+101——客户要求服务器根据请求转换HTTP协议版本
+2.3.2.2  2**：操作成功收到，分析、接受
+
+200——交易成功
+201——提示知道新文件的URL
+202——接受和处理、但处理未完成
+203——返回信息不确定或不完整
+204——请求收到，但返回信息为空
+205——服务器完成了请求，用户代理必须复位当前已经浏览过的文件
+206——服务器已经完成了部分用户的GET请求
+2.3.2.3  3**：完成此请求必须进一步处理
+
+300——请求的资源可在多处得到
+301——删除请求数据
+302——在其他地址发现了请求数据
+303——建议客户访问其他URL或访问方式
+304——客户端已经执行了GET，但文件未变化
+305——请求的资源必须从服务器指定的地址得到
+306——前一版本HTTP中使用的代码，现行版本中不再使用
+307——申明请求的资源临时性删除
+2.3.2.4  4**：请求包含一个错误语法或不能完成
+
+400——错误请求，如语法错误
+401——未授权
+HTTP 401.1 - 未授权：登录失败
+　　HTTP 401.2 - 未授权：服务器配置问题导致登录失败
+　　HTTP 401.3 - ACL 禁止访问资源
+　　HTTP 401.4 - 未授权：授权被筛选器拒绝
+HTTP 401.5 - 未授权：ISAPI 或 CGI 授权失败
+402——保留有效ChargeTo头响应
+403——禁止访问
+HTTP 403.1 禁止访问：禁止可执行访问
+　　HTTP 403.2 - 禁止访问：禁止读访问
+　　HTTP 403.3 - 禁止访问：禁止写访问
+　　HTTP 403.4 - 禁止访问：要求 SSL
+　　HTTP 403.5 - 禁止访问：要求 SSL 128
+　　HTTP 403.6 - 禁止访问：IP 地址被拒绝
+　　HTTP 403.7 - 禁止访问：要求客户证书
+　　HTTP 403.8 - 禁止访问：禁止站点访问
+　　HTTP 403.9 - 禁止访问：连接的用户过多
+　　HTTP 403.10 - 禁止访问：配置无效
+　　HTTP 403.11 - 禁止访问：密码更改
+　　HTTP 403.12 - 禁止访问：映射器拒绝访问
+　　HTTP 403.13 - 禁止访问：客户证书已被吊销
+　　HTTP 403.15 - 禁止访问：客户访问许可过多
+　　HTTP 403.16 - 禁止访问：客户证书不可信或者无效
+HTTP 403.17 - 禁止访问：客户证书已经到期或者尚未生效
+404——没有发现文件、查询或URl
+405——用户在Request-Line字段定义的方法不允许
+406——根据用户发送的Accept拖，请求资源不可访问
+407——类似401，用户必须首先在代理服务器上得到授权
+408——客户端没有在用户指定的饿时间内完成请求
+409——对当前资源状态，请求不能完成
+410——服务器上不再有此资源且无进一步的参考地址
+411——服务器拒绝用户定义的Content-Length属性请求
+412——一个或多个请求头字段在当前请求中错误
+413——请求的资源大于服务器允许的大小
+414——请求的资源URL长于服务器允许的长度
+415——请求资源不支持请求项目格式
+416——请求中包含Range请求头字段，在当前请求资源范围内没有range指示值，请求也不包含If-Range请求头字段
+417——服务器不满足请求Expect头字段指定的期望值，如果是代理服务器，可能是下一级服务器不能满足请求长。
+2.3.2.5  5**：服务器执行一个完全有效请求失败
+
+　　HTTP 500 - 内部服务器错误
+　　HTTP 500.100 - 内部服务器错误 - ASP 错误
+　　HTTP 500-11 服务器关闭
+　　HTTP 500-12 应用程序重新启动
+　　HTTP 500-13 - 服务器太忙
+　　HTTP 500-14 - 应用程序无效
+　　HTTP 500-15 - 不允许请求 global.asa
+　　Error 501 - 未实现
+HTTP 502 - 网关错误
+2.4 使用telnet进行http测试
+
+       在Windows下，可使用命令窗口进行http简单测试。
+       输入cmd进入命令窗口，在命令行键入如下命令后按回车：
+telnet www.baidu.com 80
+       而后在窗口中按下“Ctrl+]”后按回车可让返回结果回显。
+接着开始发请求消息，例如发送如下请求消息请求baidu的首页消息，使用的HTTP协议为HTTP/1.1：
+GET /index.html HTTP/1.1
+   注意：copy如上的消息到命令窗口后需要按两个回车换行才能得到响应的消息，第一个回车换行是在命令后键入回车换行，是HTTP协议要求的。第二个是确认输入，发送请求。
+可看到返回了200 OK的消息，如下图所示：
+
+       可看到，当采用HTTP/1.1时，连接不是在请求结束后就断开的。若采用HTTP1.0，在命令窗口键入：
+GET /index.html HTTP/1.0
+      此时可以看到请求结束之后马上断开。
+       读者还可以尝试在使用GET或POST等时，带上头域信息，例如键入如下信息：
+GET /index.html HTTP/1.1
+connection: close
+Host: www.baidu.com
+2.5 常用的请求方式
+       常用的请求方式是GET和POST.
+l         GET方式：是以实体的方式得到由请求URI所指定资源的信息，如果请求URI只是一个数据产生过程，那么最终要在响应实体中返回的是处理过程的结果所指向的资源，而不是处理过程的描述。
+l         POST方式：用来向目的服务器发出请求，要求它接受被附在请求后的实体，并把它当作请求队列中请求URI所指定资源的附加新子项，Post被设计成用统一的方法实现下列功能：
+1：对现有资源的解释；
+2：向电子公告栏、新闻组、邮件列表或类似讨论组发信息；
+3：提交数据块；
+4：通过附加操作来扩展数据库 。
+从上面描述可以看出，Get是向服务器发索取数据的一种请求；而Post是向服务器提交数据的一种请求，要提交的数据位于信息头后面的实体中。
+GET与POST方法有以下区别：
+（1）   在客户端，Get方式在通过URL提交数据，数据在URL中可以看到；POST方式，数据放置在HTML HEADER内提交。
+（2）   GET方式提交的数据最多只能有1024字节，而POST则没有此限制。
+（3）   安全性问题。正如在（1）中提到，使用 Get 的时候，参数会显示在地址栏上，而 Post 不会。所以，如果这些数据是中文数据而且是非敏感数据，那么使用 get；如果用户输入的数据不是中文字符而且包含敏感数据，那么还是使用 post为好。
+（4）   安全的和幂等的。所谓安全的意味着该操作用于获取信息而非修改信息。幂等的意味着对同一 URL 的多个请求应该返回同样的结果。完整的定义并不像看起来那样严格。换句话说，GET 请求一般不应产生副作用。从根本上讲，其目标是当用户打开一个链接时，她可以确信从自身的角度来看没有改变资源。比如，新闻站点的头版不断更新。虽然第二次请求会返回不同的一批新闻，该操作仍然被认为是安全的和幂等的，因为它总是返回当前的新闻。反之亦然。POST 请求就不那么轻松了。POST 表示可能改变服务器上的资源的请求。仍然以新闻站点为例，读者对文章的注解应该通过 POST 请求实现，因为在注解提交之后站点已经不同了（比方说文章下面出现一条注解）。
+ 
+2.6 请求头
+
+HTTP最常见的请求头如下：
+l         Accept：浏览器可接受的MIME类型；
+l         Accept-Charset：浏览器可接受的字符集；
+l         Accept-Encoding：浏览器能够进行解码的数据编码方式，比如gzip。Servlet能够向支持gzip的浏览器返回经gzip编码的HTML页面。许多情形下这可以减少5到10倍的下载时间；
+l         Accept-Language：浏览器所希望的语言种类，当服务器能够提供一种以上的语言版本时要用到；
+l         Authorization：授权信息，通常出现在对服务器发送的WWW-Authenticate头的应答中；
+l         Connection：表示是否需要持久连接。如果Servlet看到这里的值为“Keep-Alive”，或者看到请求使用的是HTTP 1.1（HTTP 1.1默认进行持久连接），它就可以利用持久连接的优点，当页面包含多个元素时（例如Applet，图片），显著地减少下载所需要的时间。要实现这一点，Servlet需要在应答中发送一个Content-Length头，最简单的实现方法是：先把内容写入ByteArrayOutputStream，然后在正式写出内容之前计算它的大小；
+l         Content-Length：表示请求消息正文的长度；
+l         Cookie：这是最重要的请求头信息之一；
+l         From：请求发送者的email地址，由一些特殊的Web客户程序使用，浏览器不会用到它；
+l         Host：初始URL中的主机和端口；
+l         If-Modified-Since：只有当所请求的内容在指定的日期之后又经过修改才返回它，否则返回304“Not Modified”应答；
+l         Pragma：指定“no-cache”值表示服务器必须返回一个刷新后的文档，即使它是代理服务器而且已经有了页面的本地拷贝；
+l         Referer：包含一个URL，用户从该URL代表的页面出发访问当前请求的页面。
+l         User-Agent：浏览器类型，如果Servlet返回的内容与浏览器类型有关则该值非常有用；
+l         UA-Pixels，UA-Color，UA-OS，UA-CPU：由某些版本的IE浏览器所发送的非标准的请求头，表示屏幕大小、颜色深度、操作系统和CPU类型。
+2.7 响应头
+
+HTTP最常见的响应头如下所示：
+l         Allow：服务器支持哪些请求方法（如GET、POST等）；
+l         Content-Encoding：文档的编码（Encode）方法。只有在解码之后才可以得到Content-Type头指定的内容类型。利用gzip压缩文档能够显著地减少HTML文档的下载时间。Java的GZIPOutputStream可以很方便地进行gzip压缩，但只有Unix上的Netscape和Windows上的IE 4、IE 5才支持它。因此，Servlet应该通过查看Accept-Encoding头（即request.getHeader("Accept-Encoding")）检查浏览器是否支持gzip，为支持gzip的浏览器返回经gzip压缩的HTML页面，为其他浏览器返回普通页面；
+l         Content-Length：表示内容长度。只有当浏览器使用持久HTTP连接时才需要这个数据。如果你想要利用持久连接的优势，可以把输出文档写入ByteArrayOutputStram，完成后查看其大小，然后把该值放入Content-Length头，最后通过byteArrayStream.writeTo(response.getOutputStream()发送内容；
+l         Content-Type： 表示后面的文档属于什么MIME类型。Servlet默认为text/plain，但通常需要显式地指定为text/html。由于经常要设置Content-Type，因此HttpServletResponse提供了一个专用的方法setContentTyep。 可在web.xml文件中配置扩展名和MIME类型的对应关系；
+l         Date：当前的GMT时间。你可以用setDateHeader来设置这个头以避免转换时间格式的麻烦；
+l         Expires：指明应该在什么时候认为文档已经过期，从而不再缓存它。
+l         Last-Modified：文档的最后改动时间。客户可以通过If-Modified-Since请求头提供一个日期，该请求将被视为一个条件GET，只有改动时间迟于指定时间的文档才会返回，否则返回一个304（Not Modified）状态。Last-Modified也可用setDateHeader方法来设置；
+l         Location：表示客户应当到哪里去提取文档。Location通常不是直接设置的，而是通过HttpServletResponse的sendRedirect方法，该方法同时设置状态代码为302；
+l         Refresh：表示浏览器应该在多少时间之后刷新文档，以秒计。除了刷新当前文档之外，你还可以通过setHeader("Refresh", "5; URL=http://host/path")让浏览器读取指定的页面。注意这种功能通常是通过设置HTML页面HEAD区的<META HTTP-EQUIV="Refresh" CONTENT="5;URL=http://host/path">实现，这是因为，自动刷新或重定向对于那些不能使用CGI或Servlet的HTML编写者十分重要。但是，对于Servlet来说，直接设置Refresh头更加方便。注意Refresh的意义是“N秒之后刷新本页面或访问指定页面”，而不是“每隔N秒刷新本页面或访问指定页面”。因此，连续刷新要求每次都发送一个Refresh头，而发送204状态代码则可以阻止浏览器继续刷新，不管是使用Refresh头还是<META HTTP-EQUIV="Refresh" ...>。注意Refresh头不属于HTTP 1.1正式规范的一部分，而是一个扩展，但Netscape和IE都支持它。
+2.8实体头
+
+实体头用坐实体内容的元信息，描述了实体内容的属性，包括实体信息类型，长度，压缩方法，最后一次修改时间，数据有效性等。
+l         Allow：GET,POST
+l         Content-Encoding：文档的编码（Encode）方法，例如：gzip，见“2.5 响应头”；
+l         Content-Language：内容的语言类型，例如：zh-cn；
+l         Content-Length：表示内容长度，eg：80，可参考“2.5响应头”；
+l         Content-Location：表示客户应当到哪里去提取文档，例如：http://www.dfdf.org/dfdf.html，可参考“2.5响应头”；
+l         Content-MD5：MD5 实体的一种MD5摘要，用作校验和。发送方和接受方都计算MD5摘要，接受方将其计算的值与此头标中传递的值进行比较。Eg1：Content-MD5: <base64 of 128 MD5 digest>。Eg2：dfdfdfdfdfdfdff==；
+l         Content-Range：随部分实体一同发送；标明被插入字节的低位与高位字节偏移，也标明此实体的总长度。Eg1：Content-Range: 1001-2000/5000，eg2：bytes 2543-4532/7898
+l         Content-Type：标明发送或者接收的实体的MIME类型。Eg：text/html; charset=GB2312       主类型/子类型；
+l         Expires：为0证明不缓存；
+l         Last-Modified：WEB 服务器认为对象的最后修改时间，比如文件的最后修改时间，动态页面的最后产生时间等等。例如：Last-Modified：Tue, 06 May 2008 02:42:43 GMT.
+2.8扩展头
+
+在HTTP消息中，也可以使用一些再HTTP1.1正式规范里没有定义的头字段，这些头字段统称为自定义的HTTP头或者扩展头，他们通常被当作是一种实体头处理。
+现在流行的浏览器实际上都支持Cookie,Set-Cookie,Refresh和Content-Disposition等几个常用的扩展头字段。
+l         Refresh：1;url=http://www.dfdf.org  //过1秒跳转到指定位置；
+l         Content-Disposition：头字段,可参考“2.5响应头”；
+l         Content-Type：WEB 服务器告诉浏览器自己响应的对象的类型。
+eg1：Content-Type：application/xml ；
+eg2：applicaiton/octet-stream；
+Content-Disposition：attachment; filename=aaa.zip。
+  附录：参考资料
+《HTTP1.1和HTTP1.0的区别》：
+http://blog.csdn.net/yanghehong/archive/2009/05/28/4222594.aspx
+《HTTP请求（GET和POST区别）和响应》：
+http://www.blogjava.net/honeybee/articles/164008.html
+ 
+《HTTP请求头概述_百度知道》：
+http://zhidao.baidu.com/question/32517427.html
+《实体头和扩展头》：
+http://www.cnblogs.com/tongzhiyong/archive/2008/03/16/1108776.html
+3. 深入了解篇
+3.1 Cookie和Session
+
+Cookie和Session都为了用来保存状态信息，都是保存客户端状态的机制，它们都是为了解决HTTP无状态的问题而所做的努力。
+Session可以用Cookie来实现，也可以用URL回写的机制来实现。用Cookie来实现的Session可以认为是对Cookie更高级的应用。
+3.1.1两者比较
+
+Cookie和Session有以下明显的不同点：
+1）Cookie将状态保存在客户端，Session将状态保存在服务器端；
+2）Cookies是服务器在本地机器上存储的小段文本并随每一个请求发送至同一个服务器。Cookie最早在RFC2109中实现，后续RFC2965做了增强。网络服务器用HTTP头向客户端发送cookies，在客户终端，浏览器解析这些cookies并将它们保存为一个本地文件，它会自动将同一服务器的任何请求缚上这些cookies。Session并没有在HTTP的协议中定义；
+3）Session是针对每一个用户的，变量的值保存在服务器上，用一个sessionID来区分是哪个用户session变量,这个值是通过用户的浏览器在访问的时候返回给服务器，当客户禁用cookie时，这个值也可能设置为由get来返回给服务器；
+4）就安全性来说：当你访问一个使用session 的站点，同时在自己机子上建立一个cookie，建议在服务器端的SESSION机制更安全些.因为它不会任意读取客户存储的信息。
+3.1.2 Session机制
+
+Session机制是一种服务器端的机制，服务器使用一种类似于散列表的结构（也可能就是使用散列表）来保存信息。
+当程序需要为某个客户端的请求创建一个session的时候，服务器首先检查这个客户端的请求里是否已包含了一个session标识 - 称为 session id，如果已包含一个session id则说明以前已经为此客户端创建过session，服务器就按照session id把这个 session检索出来使用（如果检索不到，可能会新建一个），如果客户端请求不包含session id，则为此客户端创建一个session并且生成一个与此session相关联的session id，session id的值应该是一个既不会重复，又不容易被找到规律以仿造的字符串，这个 session id将被在本次响应中返回给客户端保存。
+3.1.6 Session的实现方式
+
+3.1.6.1  使用Cookie来实现
+
+服务器给每个Session分配一个唯一的JSESSIONID，并通过Cookie发送给客户端。
+当客户端发起新的请求的时候，将在Cookie头中携带这个JSESSIONID。这样服务器能够找到这个客户端对应的Session。
+流程如下图所示：
+    
+3.1.6.2  使用URL回显来实现
+
+URL回写是指服务器在发送给浏览器页面的所有链接中都携带JSESSIONID的参数，这样客户端点击任何一个链接都会把JSESSIONID带会服务器。
+如果直接在浏览器输入服务端资源的url来请求该资源，那么Session是匹配不到的。
+Tomcat对Session的实现，是一开始同时使用Cookie和URL回写机制，如果发现客户端支持Cookie，就继续使用Cookie，停止使用URL回写。如果发现Cookie被禁用，就一直使用URL回写。jsp开发处理到Session的时候，对页面中的链接记得使用response.encodeURL() 。
+3.1.3在J2EE项目中Session失效的几种情况
+
+1）Session超时：Session在指定时间内失效，例如30分钟，若在30分钟内没有操作，则Session会失效，例如在web.xml中进行了如下设置：
+<session-config> 
+        <session-timeout>30</session-timeout> //单位：分钟
+    </session-config>
+2）使用session.invalidate()明确的去掉Session。
+3.1.4与Cookie相关的HTTP扩展头
+
+1）Cookie：客户端将服务器设置的Cookie返回到服务器；
+2）Set-Cookie：服务器向客户端设置Cookie；
+3）Cookie2 (RFC2965)）：客户端指示服务器支持Cookie的版本；
+4）Set-Cookie2 (RFC2965)：服务器向客户端设置Cookie。
+3.1.5Cookie的流程
+
+服务器在响应消息中用Set-Cookie头将Cookie的内容回送给客户端，客户端在新的请求中将相同的内容携带在Cookie头中发送给服务器。从而实现会话的保持。
+流程如下图所示：
+
+3.2 缓存的实现原理
+
+3.2.1什么是Web缓存
+
+WEB缓存(cache)位于Web服务器和客户端之间。
+缓存会根据请求保存输出内容的副本，例如html页面，图片，文件，当下一个请求来到的时候：如果是相同的URL，缓存直接使用副本响应访问请求，而不是向源服务器再次发送请求。
+HTTP协议定义了相关的消息头来使WEB缓存尽可能好的工作。
+3.2.2缓存的优点
+
+q      减少相应延迟：因为请求从缓存服务器（离客户端更近）而不是源服务器被相应，这个过程耗时更少，让web服务器看上去相应更快。
+q      减少网络带宽消耗：当副本被重用时会减低客户端的带宽消耗；客户可以节省带宽费用，控制带宽的需求的增长并更易于管理。
+3.2.3与缓存相关的HTTP扩展消息头
+
+q      Expires：指示响应内容过期的时间，格林威治时间GMT
+q      Cache-Control：更细致的控制缓存的内容
+q      Last-Modified：响应中资源最后一次修改的时间
+q      ETag：响应中资源的校验值，在服务器上某个时段是唯一标识的。
+q      Date：服务器的时间
+q      If-Modified-Since：客户端存取的该资源最后一次修改的时间，同Last-Modified。
+q      If-None-Match：客户端存取的该资源的检验值，同ETag。
+3.2.4客户端缓存生效的常见流程
+
+服务器收到请求时，会在200OK中回送该资源的Last-Modified和ETag头，客户端将该资源保存在cache中，并记录这两个属性。当客户端需要发送相同的请求时，会在请求中携带If-Modified-Since和If-None-Match两个头。两个头的值分别是响应中Last-Modified和ETag头的值。服务器通过这两个头判断本地资源未发生变化，客户端不需要重新下载，返回304响应。常见流程如下图所示：
+
+3.2.5 Web缓存机制
+
+HTTP/1.1中缓存的目的是为了在很多情况下减少发送请求，同时在许多情况下可以不需要发送完整响应。前者减少了网络回路的数量；HTTP利用一个“过期（expiration）”机制来为此目的。后者减少了网络应用的带宽；HTTP用“验证（validation）”机制来为此目的。
+HTTP定义了3种缓存机制：
+1）Freshness：允许一个回应消息可以在源服务器不被重新检查，并且可以由服务器和客户端来控制。例如，Expires回应头给了一个文档不可用的时间。Cache-Control中的max-age标识指明了缓存的最长时间；
+2）Validation：用来检查以一个缓存的回应是否仍然可用。例如，如果一个回应有一个Last-Modified回应头，缓存能够使用If-Modified-Since来判断是否已改变，以便判断根据情况发送请求；
+3）Invalidation： 在另一个请求通过缓存的时候，常常有一个副作用。例如，如果一个URL关联到一个缓存回应，但是其后跟着POST、PUT和DELETE的请求的话，缓存就会过期。
+3.3 断点续传和多线程下载的实现原理
+
+q      HTTP协议的GET方法，支持只请求某个资源的某一部分；
+q      206 Partial Content 部分内容响应；
+q      Range 请求的资源范围；
+q      Content-Range 响应的资源范围；
+q      在连接断开重连时，客户端只请求该资源未下载的部分，而不是重新请求整个资源，来实现断点续传。
+分块请求资源实例：
+Eg1：Range: bytes=306302- ：请求这个资源从306302个字节到末尾的部分；
+Eg2：Content-Range: bytes 306302-604047/604048：响应中指示携带的是该资源的第306302-604047的字节，该资源共604048个字节；
+客户端通过并发的请求相同资源的不同片段，来实现对某个资源的并发分块下载。从而达到快速下载的目的。目前流行的FlashGet和迅雷基本都是这个原理。
+多线程下载的原理：
+q      下载工具开启多个发出HTTP请求的线程；
+q      每个http请求只请求资源文件的一部分：Content-Range: bytes 20000-40000/47000；
+q      合并每个线程下载的文件。
+3.4 https通信过程
+
+3.4.1什么是https
+
+HTTPS（全称：Hypertext Transfer Protocol over Secure Socket Layer），是以安全为目标的HTTP通道，简单讲是HTTP的安全版。即HTTP下加入SSL层，HTTPS的安全基础是SSL，因此加密的详细内容请看SSL。
+见下图：
+   
+https所用的端口号是443。
+3.4.2 https的实现原理
+
+有两种基本的加解密算法类型：
+1）对称加密：密钥只有一个，加密解密为同一个密码，且加解密速度快，典型的对称加密算法有DES、AES等；
+2）非对称加密：密钥成对出现（且根据公钥无法推知私钥，根据私钥也无法推知公钥），加密解密使用不同密钥（公钥加密需要私钥解密，私钥加密需要公钥解密），相对对称加密速度较慢，典型的非对称加密算法有RSA、DSA等。
+下面看一下https的通信过程：
+   
+https通信的优点：
+1）客户端产生的密钥只有客户端和服务器端能得到；
+2）加密的数据只有客户端和服务器端才能得到明文；
+3）客户端到服务端的通信是安全的。
+3.5 http代理
+
+3.5.1 http代理服务器
+
+代理服务器英文全称是Proxy Server，其功能就是代理网络用户去取得网络信息。形象的说：它是网络信息的中转站。
+代理服务器是介于浏览器和Web服务器之间的一台服务器，有了它之后，浏览器不是直接到Web服务器去取回网页而是向代理服务器发出请求，Request信号会先送到代理服务器，由代理服务器来取回浏览器所需要的信息并传送给你的浏览器。
+而且，大部分代理服务器都具有缓冲的功能，就好象一个大的Cache，它有很大的存储空间，它不断将新取得数据储存到它本机的存储器上，如果浏览器所请求的数据在它本机的存储器上已经存在而且是最新的，那么它就不重新从Web服务器取数据，而直接将存储器上的数据传送给用户的浏览器，这样就能显著提高浏览速度和效率。
+更重要的是：Proxy Server(代理服务器)是Internet链路级网关所提供的一种重要的安全功能，它的工作主要在开放系统互联(OSI)模型的对话层。
+3.5.2 http代理服务器的主要功能
+
+主要功能如下：
+1）突破自身IP访问限制，访问国外站点。如：教育网、169网等网络用户可以通过代理访问国外网站；
+2）访问一些单位或团体内部资源，如某大学FTP(前提是该代理地址在该资源的允许访问范围之内)，使用教育网内地址段免费代理服务器，就可以用于对教育 网开放的各类FTP下载上传，以及各类资料查询共享等服务；
+3）突破中国电信的IP封锁：中国电信用户有很多网站是被限制访问的，这种限制是人为的，不同Serve对地址的封锁是不同的。所以不能访问时可以换一个国 外的代理服务器试试；
+4）提高访问速度：通常代理服务器都设置一个较大的硬盘缓冲区，当有外界的信息通过时，同时也将其保存到缓冲区中，当其他用户再访问相同的信息时， 则直接由缓冲区中取出信息，传给用户，以提高访问速度；
+5）隐藏真实IP：上网者也可以通过这种方法隐藏自己的IP，免受攻击。
+3.5.3 http代理图示
+
+http代理的图示见下图：
+  
+对于客户端浏览器而言，http代理服务器相当于服务器。
+而对于Web服务器而言，http代理服务器又担当了客户端的角色。
+3.6 虚拟主机的实现
+
+3.6.1什么是虚拟主机
+
+虚拟主机：是在网络服务器上划分出一定的磁盘空间供用户放置站点、应用组件等，提供必要的站点功能与数据存放、传输功能。  
+所谓虚拟主机，也叫“网站空间”就是把一台运行在互联网上的服务器划分成多个“虚拟”的服务器，每一个虚拟主机都具有独立的域名和完整的Internet服务器（支持WWW、FTP、E-mail等）功能。一台服务器上的不同虚拟主机是各自独立的，并由用户自行管理。但一台服务器主机只能够支持一定数量的虚拟主机，当超过这个数量时，用户将会感到性能急剧下降。
+3.6.2虚拟主机的实现原理
+
+虚拟主机是用同一个WEB服务器，为不同域名网站提供服务的技术。Apache、Tomcat等均可通过配置实现这个功能。
+相关的HTTP消息头：Host。
+例如：Host: www.baidu.com
+客户端发送HTTP请求的时候，会携带Host头，Host头记录的是客户端输入的域名。这样服务器可以根据Host头确认客户要访问的是哪一个域名
+#include <stdio.h>
+#include <sys/socket.h>
+#include <sys/types.h>
+#include <time.h>
+#include <errno.h>
+#include <signal.h>
+#include <stdlib.h>
+#include <string.h>
+#include <unistd.h>
+#include <sys/wait.h>
+#include <sys/time.h>
+#include <netinet/in.h>
+#include <arpa/inet.h>
+ 
+#define IPSTR "61.147.124.120"
+#define PORT 80
+#define BUFSIZE 1024
+ 
+int main(int argc, char **argv)
+{
+        int sockfd, ret, i, h;
+        struct sockaddr_in servaddr;
+        char str1[4096], str2[4096], buf[BUFSIZE], *str;
+        socklen_t len;
+        fd_set   t_set1;
+        struct timeval  tv;
+ 
+        if ((sockfd = socket(AF_INET, SOCK_STREAM, 0)) < 0 ) {
+                printf("创建网络连接失败,本线程即将终止---socket error!\n");
+                exit(0);
+        };
+ 
+        bzero(&servaddr, sizeof(servaddr));
+        servaddr.sin_family = AF_INET;
+        servaddr.sin_port = htons(PORT);
+        if (inet_pton(AF_INET, IPSTR, &servaddr.sin_addr) <= 0 ){
+                printf("创建网络连接失败,本线程即将终止--inet_pton error!\n");
+                exit(0);
+        };
+ 
+        if (connect(sockfd, (struct sockaddr *)&servaddr, sizeof(servaddr)) < 0){
+                printf("连接到服务器失败,connect error!\n");
+                exit(0);
+        }
+        printf("与远端建立了连接\n");
+ 
+        //发送数据
+        memset(str2, 0, 4096);
+        strcat(str2, "qqCode=474497857");
+        str=(char *)malloc(128);
+        len = strlen(str2);
+        sprintf(str, "%d", len);
+ 
+        memset(str1, 0, 4096);
+        strcat(str1, "POST /webservices/qqOnlineWebService.asmx/qqCheckOnline HTTP/1.1\n");
+        strcat(str1, "Host: www.webxml.com.cn\n");
+        strcat(str1, "Content-Type: application/x-www-form-urlencoded\n");
+        strcat(str1, "Content-Length: ");
+        strcat(str1, str);
+        strcat(str1, "\n\n");
+ 
+        strcat(str1, str2);
+        strcat(str1, "\r\n\r\n");
+        printf("%s\n",str1);
+        
+        //内存中的数据
+        /*POST /webservices/qqOnlineWebService.asmx/qqCheckOnline HTTP/1.1\nHost: www.webxml.com.cn\nContent-Type: application/x-www-form-urlencoded\nContent-Length:16\n\n\qqCode=474497857r\n\r\n        
+        */
+ 
+        ret = write(sockfd,str1,strlen(str1)); //send
+        if (ret < 0) {
+                printf("发送失败！错误代码是%d，错误信息是'%s'\n",errno, strerror(errno));
+                exit(0);
+        }else{
+                printf("消息发送成功，共发送了%d个字节！\n\n", ret);
+        }
+ 
+        FD_ZERO(&t_set1);
+        FD_SET(sockfd, &t_set1);
+ 
+        while(1){
+                sleep(2);
+                tv.tv_sec= 0;
+                tv.tv_usec= 0;
+                h= 0;
+                printf("--------------->1");
+                h= select(sockfd +1, &t_set1, NULL, NULL, &tv);
+                printf("--------------->2");
+ 
+                //if (h == 0) continue;
+                if (h < 0) {
+                        close(sockfd);
+                        printf("在读取数据报文时SELECT检测到异常，该异常导致线程终止！\n");
+                        return -1;
+                };
+ 
+                if (h > 0){
+                        memset(buf, 0, 4096);
+                        i= read(sockfd, buf, 4095); //recv
+                        if (i==0){
+                                close(sockfd);
+                                printf("读取数据报文时发现远端关闭，该线程终止！\n");
+                                return -1;
+                        }
+ 
+                        printf("%s\n", buf);
+                }
+        }
+        close(sockfd);
+ 
+ 
+        return 0;
+}   
+    
+    
+    
+
+
+
+
+///////////////////////////////////////////////////////////////////////////////////////////////
+
+数据库编程
+
+
+四、数据库
+
+   数据库，存数据，能进行增删改查
+
+   Oracle     大型网站、大的集团、大数据
+   SQL Server 大中型企业  偏慢  windows
+   mysql      中小型网站，大小中企业
+   Informix   大型网站， 大小中企业 
+   DB2        中小企业 
+   sybase     中小企业 
+   access     单机版 windows
+   sqlite     手机或移动设备 
+   excel   
+   
+   主要学习内容 sql语句(10条)，通用于各类型数据库
+   库: 即数据库，用于管理所有的表，里面包含表
+   表：即数据表，根据数据性质，定义多个数据表，有时表与表之间会有关联
+   视图：通过sql语句，检索出来虚拟的表格，可以再次通过sql语句对视图进行检索
+   事件：也称为触发器，是用sql语句编写的函数，当数据表中有增、删、改时自动被调用
+   存储过程: 是用sql语句编写的函数，可以通过sql语句来调用
+   
+
+linux下操作mysql数据库
+1.启动和停止mysqld服务   
+  service mysqld start
+  service mysqld stop
+  
+2.创建管理帐号
+   mysqladmin -u root password 123456
+  
+3.进入mysql数据库工具
+   mysql -uroot -p123456
+   
+   在mysql数据库中，每操作一个命令，都是;号结尾的
+   
+4.查看当前建立的数据库 
+   mysql> show databases;
+
+5.创建和删除一个数据库
+  其中schoolinfo是数据库名称
+  创建数据库
+  mysql> create database schoolinfo;
+  删除数据库
+  mysql> drop database schoolinfo;
+
+6.进入数据库
+
+  mysql> use schoolinfo;
+  
+7.查看数据表
+  mysql> show tables  
+
+8.退出
+  exit  保存退出
+  quit  不保存退出      
+   
+
+创建表(开发时用)***、更改表(升级时用)、删除表(升级时用)
+(一)、创建表格
+   
+  1.建数据库
+  
+  2.建数据表
+      表格的每一列都有个名称，称为字段名(结构体的成员)
+      字段必须指定 名称、类型、长度、是否为空、默认值、是否为主键、是否值为自增。这些统称为约束
+      
+      主键：用于唯一识别一条记录(即一行)，通常用整型做主键，不可以重复。两种方式填写：人工、自动
+      类型：整数、小数、字符串、日期和时间、二进制数据、文本数据
+            通用数据类型
+            int 
+            float
+            double
+            char    (n)    //长度固定
+            数据库常用类型
+            integer  ,     //32 位的整数  主键通常使用该类型
+            smallint ,	   //16 位的整数
+            tinyint  ,     //8位
+            decimal(9,2),  //p精确值和 s 大小的十进位整数，p代表10进制小数和整数的整体位数,s代有小数的10进制位数
+                           1234567.89
+            varchar (n),   //长度不固定,最大长度为 n 的字串，不能超过 4096
+            text           //文本
+	          binary         //二进制数据
+            date     日期类型 2000-2-2 4:4:4
+	          time     时间类型 4:4:4
+	     
+      主键：即每一行数据的唯一标识    //primary key  
+      默认值：当填写任何一个字段值时，该字段自动填写的值  //default 值
+      是否允许为空：空和空串不同  NULL空   ""空串     //not null 
+            char *p=NULL; 没内存地址
+            char *p="";   有地址值，指向占1字节
+      自动增长值：即整型自动的填写的不重复数据 //autoincrement(sqlite) 或 auto_increment(mysql)
+      
+      
+ ***  用sql语句建表
+      格式:
+          create table 表名(
+             字段名 字串类型(长度) 约束，
+             字段名 其它类型 约束     
+          )
+          
+      例：
+        create table student(
+        	id integer not null primary key auto_increment,
+        	name varchar(20) not null,
+        	sex char(6) default '男',
+        	age int default 18
+        )      
+        
+      所有的sql语句,在工具中执行 ";" 代表语句结束，可执行。但在c语句，所有的语句不可以有";"      
+          
+      删除表格
+      格式：drop table 表名
+      
+      例:drop table student
+
+(二)、sql语句
+     增、删、改、查
+     select * from 表名
+     
+1、增
+   insert into 表名(字段列表) values (数值列表)
+   
+ 例:
+    insert into student(name,sex,age) values('张三','男',23);
+    insert into student(name,sex,age) values('李四','男',12);
+    insert into student(name,sex,age) values('王五','女',22);
+    insert into student(name,sex,age) values('赵六','女',23);
+    insert into student(name,sex,age) values('钱七','男',18);
+    insert into student(name,sex,age) values('孙九','男',23);
+    insert into student(name,sex,age) values('李十','男',23);
+    
+    select * from student;
+   
+2、删
+   delete from 表名 where 条件
+   where部分可省略，代表删除表中的所有数据
+ 
+   ***
+      > >= < <=  = !=    age > 10
+      like                name like '王%'  %代表所有字符
+      in                  age in (23,12,3) 即符合在()内的值，被列出
+      between .. and      age between 12 and 23   从12到23
+      
+      and   就是 &&
+      or    就是 ||
+      
+      在...之间           age >12 and age <23      
+    
+  例：    
+      delete from student where age between 10 and 22;
+      delete from student where age >=10 and age <=22;
+      delete from student where name in ('张三','王五')  and age=18;
+      delete from student where (name='张三' or name ='王五') and age=18;
+      delete from student where name like '张%'; 
+ 
+   
+      条件的组合 使用and 和 or
+   
+3、改
+   update 表名 set 字段名=值[,字段名=值... ] where 条件
+   
+   例：
+   update student set name='武六',sex='女'
+   update student set name='武六',sex='女',age=34 where name like '李%' ;
+      
+4、查
+
+1） 简单查询
+   select 字段名 from 表名 where 条件 [order by 字段 [ desc]]
+   字段名
+      *                      代表所有字段
+      name,age               直接指出了字段
+      表名.name,表名.age     通过表名指出了字段名
+      表名.name as newname   给字段名重写命名(不是改写数据库，是临时的)
+   order by 字段名1,字段名2  用于排序  从小到大 可省略
+   desc 让排序从大到小排序   可省略   
+         
+   例：
+      select * from student;
+      select * from student order by age;
+      select * from student order by age ,sex desc;
+      select * from student where name like '孙%';
+      select name,age from student where name like '孙%';
+      select name,age as a from student where name like '孙%';
+      select name,student.age as a from student where name like '孙%'; 
+ 
+   字段的运算，+ - * / % >> << & | ^
+   
+   例：
+     select id+age as bits from student;
+     select age>>1 as bits from student;
+   
+   分页查询
+     limit start,num  //从第start行开始，读num行
+     limit num  //从头读取num行
+     
+     SELECT * FROM table LIMIT 5,10; //从第6行开始，读取10行
+     SELECT * FROM table LIMIT 95,-1; //从第96行开始，读取到最后
+     SELECT * FROM table LIMIT 5; //读取前5行
+    
+
+
+2）组合查询
+    用途是多个表之间一起查数据
+    
+    建表的原则:凡事在数据表中，有重复记录的数据，就需要重新建一个表，只将id记录在前一个表中
+        例如 学生表，教师的信息要单独建表
+        
+        drop table student;
+        create table student(
+        	id integer not null primary key auto_increment,
+        	name varchar(20) not null,
+        	sex char(6) default '男',
+        	age int default 18              
+        ) ;
+        create table teacher(
+         	id integer not null primary key auto_increment,
+        	name varchar(20) not null,
+        	sex char(6) default '男',
+        	age int default 18
+        );  
+        create table objects(
+	        id integer not null primary key auto_increment,
+        	name varchar(20) not null,
+                teacher_id int
+        );
+        create table scores(
+               id integer not null primary key auto_increment,
+               student_id int,
+               objects_id int,
+               score double
+        );
+
+    数据
+       insert into student(name,sex,age) values('张三','男',23);
+       insert into student(name,sex,age) values('李四','男',12);
+       insert into student(name,sex,age) values('王五','女',22);
+       insert into student(name,sex,age) values('赵六','女',23);
+       insert into student(name,sex,age) values('钱七','男',18);
+       insert into student(name,sex,age) values('孙九','男',23);
+       insert into student(name,sex,age) values('李十','男',23);
+   
+   
+       insert into teacher(name,sex,age) values('张老师','男',23);
+       insert into teacher(name,sex,age) values('李老师','男',12);
+       insert into teacher(name,sex,age) values('王老师','女',22);
+       insert into teacher(name,sex,age) values('赵老师','女',23);
+       insert into teacher(name,sex,age) values('钱老师','男',18);
+   
+   
+       insert into objects(name,teacher_id) values('数学',1);
+       insert into objects(name,teacher_id) values('物理',1);
+       insert into objects(name,teacher_id) values('化学',2);
+       insert into objects(name,teacher_id) values('语文',3);
+       insert into objects(name,teacher_id) values('英语',4);
+       insert into objects(name,teacher_id) values('生物',5);
+   
+       insert into scores(student_id,objects_id,score) values(1,1,60);
+       insert into scores(student_id,objects_id,score) values(1,2,80);
+       insert into scores(student_id,objects_id,score) values(1,3,98);
+       insert into scores(student_id,objects_id,score) values(1,4,88);
+       insert into scores(student_id,objects_id,score) values(1,5,99);
+       insert into scores(student_id,objects_id,score) values(1,6,38);
+       insert into scores(student_id,objects_id,score) values(2,1,66);
+       insert into scores(student_id,objects_id,score) values(2,2,55);
+       insert into scores(student_id,objects_id,score) values(2,3,98);
+       insert into scores(student_id,objects_id,score) values(2,4,77);
+       insert into scores(student_id,objects_id,score) values(2,5,69);
+       insert into scores(student_id,objects_id,score) values(2,6,98);
+       insert into scores(student_id,objects_id,score) values(3,1,54);
+       insert into scores(student_id,objects_id,score) values(3,2,67);
+       insert into scores(student_id,objects_id,score) values(3,3,89);
+       insert into scores(student_id,objects_id,score) values(3,4,97);
+       insert into scores(student_id,objects_id,score) values(3,5,69);
+       insert into scores(student_id,objects_id,score) values(3,6,88);
+       insert into scores(student_id,objects_id,score) values(4,1,84);
+       insert into scores(student_id,objects_id,score) values(4,2,87);
+       insert into scores(student_id,objects_id,score) values(4,3,99);
+       insert into scores(student_id,objects_id,score) values(4,4,87);
+       insert into scores(student_id,objects_id,score) values(4,5,99);
+       insert into scores(student_id,objects_id,score) values(4,6,98);
+       insert into scores(student_id,objects_id,score) values(5,1,77);
+       insert into scores(student_id,objects_id,score) values(5,2,87);
+       insert into scores(student_id,objects_id,score) values(5,3,66);
+       insert into scores(student_id,objects_id,score) values(5,4,87);
+       insert into scores(student_id,objects_id,score) values(5,5,88);
+       insert into scores(student_id,objects_id,score) values(5,6,98);
+       insert into scores(student_id,objects_id,score) values(6,1,77);
+       insert into scores(student_id,objects_id,score) values(6,2,87);
+       insert into scores(student_id,objects_id,score) values(6,3,66);
+       insert into scores(student_id,objects_id,score) values(6,4,87);
+       insert into scores(student_id,objects_id,score) values(6,5,88);
+       insert into scores(student_id,objects_id,score) values(6,6,98);    
+ 
+ 
+ 
+    scores-> 可以找到学生，找到学科 ->可以找到老师
+    
+    1.查找学生的每科分数是什么，要求显示任课教师
+ 
+   方法一：  select 字段 from 表1,表2 where 表1.字段=表2.字段
+      注意：该方法没有进行关联的数据，不会显示
+      1)确定谁是主表?
+            分数是主表,其它表为从表
+      2)确定表与表之间的关系
+            scores.student_id = student.id and scores.object_id=objects.id and objects.teacher_id =teacher.id
+            
+                 
+   select student.id,student.name,student.sex,student.age,objects.name as objname,teacher.name as teaname,score from scores,student,objects,teacher where scores.student_id = student.id and scores.objects_id=objects.id and objects.teacher_id =teacher.id;      
+    
+    方法二 select 字段列表 from 表名1 left join 表名2 on 表名1.字段 = 表名2.主键 where 条件 
+       主表中，所关联的某一id没有填写数据，则主表也依然显示
+       left 左侧为主表， right 右侧为主表
+       1)需要将哪一个表的数据全部显示，哪一个表就当主表
+             学生表当主表
+       2)确定表的关系
+                     
+   select * from objects left join scores on scores.objects_id=objects.id left join student on scores.student_id = student.id left join teacher on objects.teacher_id =teacher.id
+
+     
+
+3)复合查询
+    用于实现将检索的结果当做另一个数据表的检索的条件
+[1] select 字段列表 from 表名 where 字段名 in (值1,值2)  
+    select 字段列表 from 表名 where 字段名 in (select 字段名 from 表2 where 条件) 
+    
+
+   select * from student where id in (1,3,5,7) //在()中是指定的集合
+   复合查询是把select检索的结果当成集合
+   //如果()检索有结果，则显示符合该结果的id的所有学生
+   select * from student where id in (select id from student  where name like '李%')
+    
+    
+[2] select 字段列表 from 表1 where exists (select * from 表2 where 条件)
+    当表2中没有检索出数据，则不检索前面的表1
+    
+    //如果分数表有数据则显示学生的所有信息，否则不显示任何学生信息
+    select * from student where exists(select id from scores )
+    select * from student where exists(select * from information_schema.TABLES where TABLE_NAME ='student')
+   
+4）整合查询
+   用途：计算一个表中的数据。
+   
+   用于实现获取记录总数(COUNT)、求和(SUM)、求平均值(AVG)、最大值(MAX)、最小值(MIN)等
+   
+   select count[sum,avg,max,min](字段名) as 新的名称,分组用的字段名 from 表名 where 条件 Group by 分组用的字段名 order by 字段名 desc
+   
+   Group by    按指定的字段分组进行计算数据，如不使用group by 则将数据表中所有数据进行计算
+
+   //记算总的数据条数
+   select count(*) as recodes,objects_id from scores
+   //每个科目，的分数各有多少条记录 按科目分组
+   select count(*) as recodes,objects_id from scores group by objects_id
+   //计算最大、最小、平均、和的值
+   select max(age) as maxage,min(age) as minage,avg(age) as avgage,sum(age) as sumage from student
+   //计算每个学生的平均分，和总分  按学生分组
+   select student.id,student.name,avg(score) as avgscore,sum(score) as sumscore from student,scores where student.id=scores.student_id group by student.id 
+   select student.id,student.name,avg(score) as avgscore,sum(score) as sumscore from student  left join scores on student.id=scores.student_id group by student.id 
+   //计算每个老师的教学水平，根据学生的分数来计算 按教师分组
+   select teacher.id,teacher.name,objects .name as objects ,avg(score) as avgscore,sum(score) as sumscore from objects left join scores on objects.id=scores.objects_id left join teacher on objects.teacher_id=teacher.id  group by teacher.id,objects.id
+   //计算每科的平均分和总分
+   select objects.id,objects.name,avg(score) as avgscore,sum(score) as sumscore from objects left join scores on objects.id=scores.objects_id  where score>=60 group by objects.id
+   
+   
+
+
+
+
+10.c语言操作mysql数据库
+   数据库引擎：即语言接口
+      ODBC 是windows内的数据库接入口。所有程序可以通过ODBC来连接数据库
+      JDBC 是JAVA的数据库接口
+      
+      每一种数据库，在linux中都提供了函数库，是数据库操作的接口
+      sqlite
+      mysql
+      
+      rpm -ivh /root/Desktop/mysql-devel-5.0.22-2.1.i386.rpm 
+     
+   操作中需要用到mysql中定义的三个结构
+      MYSQL     //数据库句柄 相当于FILE
+      MYSQL_RES //数据的结果集  select查询的结果
+      MYSQL_ROW //数据行  每次在结果集中读取一行数据
+      
+      
+     
+   操作mysql需要以下API
+     #include <mysql/mysql.h> 
+     
+     MYSQL *mysql_init(MYSQL *);
+     //这里称之为载入函数吧，返回的MYSQL指针要用到后续的函数中 参数通常设为NULL 返回MYSQL地址
+     
+     int mysql_options(MYSQL *connection, enum option_to_set,const char *argument);
+     //设置MYSQL*的一些属性，比如超时时间等
+     
+     MYSQL *mysql_real_connect(MYSQL *connection,
+                     const char *server_host,  //域名   本地
+                     const char *sql_user_name,//用户名 root
+                     const char *sql_password, //密码   123456
+                     const char *db_name,      //数据库名
+                     unsigned int port_number,//置0连接默认端口，一般为3306
+                     const char *unix_socket_name,//NULL
+                     unsigned int flags);//无另外属性时置0
+     //连接函数
+     
+     void mysql_close(MYSQL *connection);
+     //关闭连接
+     
+     unsigned int mysql_errno(MYSQL *connection);
+     //返回错误代码
+     
+     char *mysql_error(MYSQL *connection);     
+     //返回错误信息
+     
+     int mysql_query(MYSQL *connection, const char *query);
+     //执行sql语句
+     
+     my_ulonglong mysql_affected_rows(MYSQL *connection);
+     //返回执行语句过后受影响的行数
+     
+     MYSQL_RES *mysql_store_result(MYSQL *connection);
+     //返回执行结果，适用于数据量较小时
+     
+     my_ulonglong mysql_num_rows(MYSQL_RES *result);
+     //返回上面函数返回结果的行数
+     
+     MYSQL_ROW mysql_fetch_row(MYSQL_RES *result);
+     //抽取一条记录，返回NULL时表示抽取完记录或者错误
+     
+     void mysql_data_seek(MYSQL_RES *result, my_ulonglong offset);
+     //调整数据位置，offset为0时，下次调用mysql_fetch_row将返回result第一条记录
+     
+     MYSQL_ROW_OFFSET mysql_row_tell(MYSQL_RES *result);
+     //返回当前的位置
+     
+     MYSQL_ROW_OFFSET mysql_row_seek(MYSQL_RES *result, MYSQL_ROW_OFFSET offset);
+     //移动数据位置，并返回先前的位置，可以和上一个函数结合使用
+     
+     void mysql_free_result(MYSQL_RES *result);
+     //释放result空间
+     
+     MYSQL_RES *mysql_use_result(MYSQL *connection);
+     //返回执行结果，适用于数据量较大时
+     
+     unsigned int mysql_field_count(MYSQL *connection);
+     //返回查询结果中的列数（column数）
+     
+     MYSQL_FIELD *mysql_fetch_field(MYSQL_RES *result);
+     //获得查询结果中的列名等信息（表头信息）
+
+
+     
+     char **row
+     
+   
+例：
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <errno.h>
+#include <mysql/mysql.h>
+//头文件 libdb.h
+extern int mydb_init(char* host,char* user,char*ps,char* dbname);
+extern int mydb_exit();
+extern int mydb_query(char* sql);
+extern char** mydb_result(char* sql,int* rows,int* clos);
+
+//源码  libdb.c
+static MYSQL *pdb;
+static MYSQL_RES *res; //查询结果 
+static int row,col;    //查询到的数据的行和列
+static char** result;
+static void mydb_freeitem(){
+    int i;
+    for(i=0;i<row*col;i++) free(result[i]);
+}
+
+int mydb_init(char* host,char* user,char*pw,char* dbname){
+    //1.创建MYSQL
+    pdb=mysql_init(NULL);
+    if (pdb==NULL) goto INITERR;
+    //2.连接数据库
+    MYSQL *tmp_pdb;
+    tmp_pdb=mysql_real_connect(pdb,host,user,pw,dbname,3306,NULL,0);
+    if (tmp_pdb==NULL) goto CONNECTERR;
+    return 0;
+CONNECTERR:
+    mysql_close(pdb);
+INITERR:
+    printf("---- err=%s\n",strerror(errno));
+    return -1;
+}
+
+int mydb_exit(){
+    //1.中途申请的内存释放
+    if (result!=NULL){
+       mydb_freeitem();//释放每一子项，即每一个字符串内存
+       free(result);   //释放指针数组
+    }
+    //2.释放MYSQL
+    mysql_close(pdb);
+    return 0;
+}
+
+int mydb_query(char* sql){
+    //执行sql
+    int err=mysql_query(pdb,sql); //err是函数是否执行，而不是代表sql是否成功
+    //判断sql是否出错
+    unsigned int no= mysql_errno(pdb); //获取错误号
+    if (no!=0){ //0代表成功，非0代表sql语句执行出错
+        printf("--- query err=%s\n",mysql_error(pdb)); //打印错误信息
+        return -1;
+    }
+    return 0;
+}
+
+char** mydb_result(char* sql,int* rows,int* cols){
+   //执行sql语句
+   int err= mydb_query(sql);
+   if (err==-1) return NULL;
+   //获取执行的结果
+   if (res!=NULL) mysql_free_result(res);
+   res=mysql_store_result(pdb);
+   if (res==NULL) return NULL;
+   //获取行数和列数
+   *rows=mysql_num_rows(res);
+   *cols=mysql_num_fields(res);
+   //申请内存
+   int i=0,j,n=((*rows)*(*cols));
+   if (result==NULL)
+      result=malloc(n*4); //申请
+   else{
+      mydb_freeitem();//释放每一子项，即每一个字符串内存
+      result=realloc(result,n*4); //扩展
+   }
+   row=*rows;
+   col=*cols;
+   //-------------------------------------------------------------
+   MYSQL_ROW rowdb;
+   //读取数据
+   while(rowdb=mysql_fetch_row(res)){
+       for(j=0;j< *cols;j++){
+           if (rowdb[j]!=NULL) {
+               result[i*(*cols)+j]=(char*)malloc(strlen(rowdb[j])+1);
+               strcpy(result[i*(*cols)+j],rowdb[j]);
+           }
+           else result[i*(*cols)+j]=NULL;
+       }
+       i++;
+   }
+   return result;
+}
+
+//应用test.c
+int main(){
+    //准备
+    int err= mydb_init("localhost","root","123456","yecy");
+    if (err==-1) return -1;
+
+    char buf[256];
+    char sex[5];
+    int age;
+    char sql[256];
+    while(1){
+        scanf("%s",buf);
+        if (strcmp(buf,"q")==0) break;
+        else if (strcmp(buf,"i")==0){
+            printf("input name sex age:\n");
+            scanf("%s %s %d",buf,sex,&age);
+            sprintf(sql,"insert into student(name,sex,age) values('%s','%s',%d)",buf,sex,age);
+            printf("-----  %s\n",sql);
+            mydb_query(sql);
+        }
+        else if (strcmp(buf,"d")==0){
+            printf("input name:\n");
+            scanf("%s",buf);
+            sprintf(sql,"delete from student where name like '%s%%'",buf);
+            printf("-----  %s\n",sql);
+            mydb_query(sql);
+        }
+        else if (strcmp(buf,"f")==0){
+            printf("input name:\n");
+            scanf("%s",buf);
+            sprintf(sql,"select * from student where name like '%s%%'",buf);
+            printf("-----  %s\n",sql);
+            int i,rn,cn;
+            char** result= mydb_result(sql,&rn,&cn);
+            if (result!=NULL){
+               for(i=0;i<rn*cn;i++){
+                  printf("\t%s ",result[i]);
+                  if (i%cn==cn-1) printf("\n");
+               }
+            }
+        }
+
+    }
+    //消毁
+    mydb_exit();
+}
+
+
+    编译：gcc  -o test test.c `mysql_config --cflags --libs`
+    
+ 
+七、项目：即时可视语音对讲系统。
+    要求：可随时输入文字进行通讯
+          按下按钮可实现语言对讲，可开启可视视频
+          适用范围省内(无线网卡)
+    
+    需求分析
+          视频显示框
+          文本显示区
+          文字编辑框 发送按钮
+          对讲开启按钮 按下按钮时，语音通话，随时发送，按钮抬起，结束语音
+          可传送文件 
+    
+    概要设计
+          1.模块划分
+          
+          2.确定接收流程(数据)
+             
+          
+          3.控制流程(代表执行)
+            1)服务器
+            2)对讲机的服务端
+               
+          
+          4.数据库的选用
+          ....
+    详细设计  
+          1.模块接口定制 (面向过程或面向结构,函数)
+          2.网络接口定制 (网络协议)
+          3.数据结构的定制(数据表结构及表与表之间的关系)
+          
+    编码
+    测试  
+    
+    
+    viewtalk
+        libnet
+           libsev.c
+           libsev.h   //tcp服务接口  调消息发送函数
+           libcli.c
+           libcli.h   //tcp客户接口  调消息发送函数
+           libudp.c
+           libudp.h   //udp接口
+           libping.c
+           libping.h  //ping接口
+        libao
+           libalsa_dev.c
+           liboss_dev.c
+           libao.h    //音频接口 
+           libao.c
+        libvo
+           libfb_dev.c
+           libvo.h    //屏接口
+           libvo.c
+        libcam
+           lib9650.c
+           libcam.h   //镜头接口
+           libcam.c
+        libdb
+           libmysql.c
+           libsqlite.c
+           liboracle.c                      
+           libdb.c
+           libdb.h    //数据库接口
+        viewtalk.c                   
+        viewtalk.h    //控制流程接口  调消息函数的接收  然后sev接收函数
+        
+           
+        
+    app
+        stdc  //应用，该应用使用指令实现，以后可以用qt实现
+           sevtest.c
+           test.c        
+        qt
+           sevtest服务
+           test应用
+        android
+           sevtest服务   viewtalk.so
+           test应用
+                   
+        
+              
+   
+
+        
+              
+           
+           
+ /////////////////////////////////////////////////////
+ viewtalk.c
+ 的关键逻辑
+ #include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include "libmsg.h"
+char recvhead[4096];
+char recvdata[4096];
+
+
+int getdata(int fd){
+    head_t *head;
+    size=sevdev.recv(recvheada,sizeof(head_t));
+    if (size<=0) break;
+    head=(head_t*)recvhead;
+    size=sevdev.recv(recvdata,sizeof(head->size));
+    if (size<=0) break;
+    //处理
+    //应答
+}
+
+int msgrecv(int type,mdata_t *m){//事件
+   int size;
+   switch(type){
+   case MSG_SEV_HASDATA:
+       getdata(m->idata);
+   }
+}
+
+int talksev_init(int port){
+   //消息初始化
+   int err= msg_init(IPC_CREAT |IPC_EXCL,101,msgrecv,0);
+   if (err==-1) goto MSGERR;
+   //网络服务初始化 
+   err=sevdev.init(port);
+   if (err==-1) goto SEVERR;
+   return 0;
+   //数据库初始化
+   err=db.init("192.168.1.1","root","123456","student");
+   if (err==-1) goto DBERR;
+   return 0;
+DBERR:
+   sevdev.destroy();
+SEVERR:
+   msg_destroy();
+MSGERR:
+   return -1;
+}
+int talksev_destroy(){
+   db.exit();
+   sevdev.destroy();
+   msg_destroy();
+}
+//////////////////////////////////////////////////////////////
+int main(int argc,char **argv){
+    talksev_init(atoi(argv[1]));
+    
+   char str[256];
+   while(1){
+      mdata_t m;
+      printf("请输入消息类型 和提示信息\n");
+      scanf("%d %s",&msg,m.msgstr);
+      msg_send(msg,&m);
+      if (msg==0) break;
+   }
+   //消息销毁
+   talksev_destroy();
+}
+           
+
+   1.消息
+typedef struct msgbuf{     
+    long mtype;    
+    mdata_t mdata;  //改为了联合体
+} msg_t;         
+int msg_init(int flg,int code,int (*handler)(int ,mdata_t*),int mtype){
+    postmsg=handler;
+    msgflg=flg;
+    //获取key值
+    key_t key=ftok("/bin/ls",code); //增加了code变量 如果code可变量，则在一个机器上，可以多个进程都使用这个库
+    ......
+}    
+
+   2.tcp
+    监听后发消息
+    //发送消息
+       mdata_t m;
+       m.idata=fd;
+       int err=msg_send(MSG_CMD_SEVHASDATA,&m);
+       if (err==-1){
+           printf("----发送服务端可接收数据 消息失败\n");
+       }
+    
+    收发数据时，必须完成指定的size长度的收发
+    /接收数据函数，在sev部分监听描述符，有数据可读时，则发送消息通知
+    static int sev_recv(int fd,char *buf,int size){
+        int recvsize=size; //代表未接收的字节数
+        while(recvsize>=0){
+            int len=recv(fd,buf+size-recvsize,recvsize);
+            if (len<=0) return -1;
+            recvsize-=len;
+        }
+        return size;
+    }
+    
+    //发送数据
+    static int sev_send(int fd,char *buf,int size){
+        int sendsize=size; //代表未发出的字节数
+        while(sendsize>=0){
+            int len=send(fd,buf+size-sendsize,sendsize);
+            if (len<=0) return -1;
+            sendsize-=len;
+        }
+        return size;
+    }        
+    
+   3.应用接口（即控制模块）
+    在这里接收消息，收到消息后，分步接收网络数据
+    int getdata(int fd){
+        head_t *head;
+        size=sevdev.recv(recvheada,sizeof(head_t));
+        if (size<=0) break;
+        head=(head_t*)recvhead;
+        size=sevdev.recv(recvdata,sizeof(head->size));
+        if (size<=0) break;
+        //处理
+        //应答
+    }
+    
+    int msgrecv(int type,mdata_t *m){//事件
+       int size;
+       switch(type){
+       case MSG_SEV_HASDATA:
+           getdata(m->idata);
+       }
+    } 
+    
+    4.注意音频
+       频率 8000
+       声道 1
+       位数 16
+        
